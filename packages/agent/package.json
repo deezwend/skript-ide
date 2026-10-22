@@ -10,7 +10,13 @@
     "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
   "devDependencies": {
+    "@skript-ide/language-server": "*",
     "@types/node": "^26.6.5",
     "tsx": "^4.20.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@skript-ide/runtime-validator": "*",
+    "@skript-ide/syntax-db": "*"
   }
 }

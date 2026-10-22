@@ -44,6 +44,7 @@ function createBrowserFallback(): SkriptIdeApi {
     listSkriptVersions: async () =>
       SKRIPT_RUNTIMES.map((profile) => ({ ...profile, isDefault: profile.skript === DEFAULT_SKRIPT_VERSION, javaAvailable: null })),
     openProject: async () => project,
+    lastProject: async () => null,
     setSkriptVersion: async (version) => {
       project = { ...project, settings: { ...project.settings, skriptVersion: version } }
       project.addonIssues = checkAddonSelections(project.settings.addons ?? [], version)
@@ -54,7 +55,52 @@ function createBrowserFallback(): SkriptIdeApi {
       project.addonIssues = checkAddonSelections(addons, project.settings.skriptVersion)
       return project
     },
-    validateOnVersion: async () => unavailable()
+    validateOnVersion: async () => unavailable(),
+    agentGetState: async () => ({
+      settings: { providerId: null, modelId: null, effort: null, permissionMode: 'ask-when-needed' },
+      sessionId: null,
+      running: false,
+      messages: [],
+      keySource: 'none',
+      configuredProviders: [],
+      encryptionAvailable: false,
+      codex: { signedIn: false, email: null, plan: null },
+      goal: null,
+      usage: {
+        uncached: 0,
+        cached: 0,
+        written: 0,
+        output: 0,
+        cost: 0,
+        hitRate: null,
+        totalHitRate: null,
+        contextTokens: 0,
+        contextWindow: 0,
+        reBilledTokens: 0,
+        reBilledCost: 0,
+        reBilledCount: 0,
+        byModel: []
+      },
+      permissionMode: 'ask-when-needed'
+    }),
+    agentListProviders: async () => unavailable(),
+    agentSetSettings: async () => unavailable(),
+    agentSetApiKey: async () => unavailable(),
+    agentKeySource: async () => 'none',
+    agentCodexLogin: async () => unavailable(),
+    agentCodexLogout: async () => unavailable(),
+    agentSend: async () => unavailable(),
+    agentListFiles: async () => [],
+    agentCancel: async () => {},
+    agentReset: async () => {},
+    agentListSessions: async () => [],
+    agentLoadSession: async () => unavailable(),
+    agentDeleteSession: async () => unavailable(),
+    agentUndo: async () => unavailable(),
+    agentSetGoal: async () => unavailable(),
+    agentSetPermissionMode: async () => unavailable(),
+    agentRespondApproval: () => {},
+    onAgentEvent: () => () => {}
   }
 }
 

@@ -1,16 +1,21 @@
+import { DEFAULT_PERMISSION_MODE, needsApproval, type PermissionMode } from './permission'
 import { toolCalls, type Message, type ToolCallBlock, type ToolResultBlock } from './messages'
-import type { ModelProvider, ModelResponse } from './provider'
+import type { ModelProvider, ModelResponse, StreamDelta, TokenUsage } from './provider'
 import { validateInput, type ToolRegistry } from './registry'
 import { ToolError, type ToolContext } from './tool'
 
 /** Arayüze aktarılan olaylar; IPC üzerinden tek bir kanaldan akıtılmak üzere tasarlandı. */
 export type AgentEvent =
+  /** Model yanıtı akarken gelen parça; ardından aynı yanıt `assistant-message` olarak tam gelir. */
+  | { type: 'delta'; delta: StreamDelta }
   | { type: 'assistant-message'; message: Message }
+  /** Bir model çağrısının token kullanımı (sağlayıcı bildirdiyse). */
+  | { type: 'usage'; usage: TokenUsage }
   | { type: 'tool-start'; call: ToolCallBlock }
   | { type: 'tool-result'; call: ToolCallBlock; result: ToolResultBlock }
   | { type: 'done'; reason: AgentStopReason }
 
-export type AgentStopReason = 'end' | 'max_tokens' | 'max_turns'
+export type AgentStopReason = 'end' | 'max_tokens' | 'max_turns' | 'refusal'
 
 export interface RunAgentOptions {
   provider: ModelProvider
@@ -19,8 +24,10 @@ export interface RunAgentOptions {
   system: string
   /** Önceki konuşma + yeni kullanıcı mesajı. Değiştirilmez; sonuç yeni dizi olarak döner. */
   messages: readonly Message[]
-  /** Sonsuz tool döngüsüne karşı üst sınır (model çağrısı sayısı). */
+  /** İsteğe bağlı üst sınır (model çağrısı sayısı). Varsayılan sınırsız; durdurmak için signal kullanılır. */
   maxTurns?: number
+  /** Her tool çağrısında okunur; çalışma sırasında değiştirilen mod bir sonraki çağrıdan itibaren geçerli olur. */
+  permissionMode?: () => PermissionMode
   onEvent?: (event: AgentEvent) => void
 }
 
@@ -29,7 +36,7 @@ export interface RunAgentResult {
   reason: AgentStopReason
 }
 
-const DEFAULT_MAX_TURNS = 25
+const DEFAULT_MAX_TURNS = Infinity
 
 /**
  * Agent döngüsü: modeli çağırır, istediği tool'ları sırayla çalıştırır, sonuçları geri verir;
@@ -37,6 +44,7 @@ const DEFAULT_MAX_TURNS = 25
  */
 export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult> {
   const { provider, registry, context, system, onEvent } = options
+  const permissionMode = options.permissionMode ?? (() => DEFAULT_PERMISSION_MODE)
   const maxTurns = options.maxTurns ?? DEFAULT_MAX_TURNS
   const messages = [...options.messages]
   const tools = registry.definitions()
@@ -52,22 +60,33 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
       system,
       messages,
       tools,
-      signal: context.signal
+      signal: context.signal,
+      onDelta: onEvent ? (delta) => onEvent({ type: 'delta', delta }) : undefined
     })
+    if (response.usage) onEvent?.({ type: 'usage', usage: response.usage })
     context.signal.throwIfAborted()
 
-    const assistant: Message = { role: 'assistant', content: response.content }
+    // Kesilen yanıttaki tool çağrılarının girdisi eksik olabilir; çalıştırılmaz ve geçmişe de
+    // sonuçsuz tool çağrısı bırakılmaz (sonraki istekte sağlayıcı bunu reddeder)
+    const content =
+      response.stopReason === 'max_tokens'
+        ? response.content.filter((block) => block.type !== 'tool_call')
+        : response.content
+    const assistant: Message = { role: 'assistant', content }
     messages.push(assistant)
     onEvent?.({ type: 'assistant-message', message: assistant })
 
+    if (response.stopReason === 'max_tokens' || response.stopReason === 'refusal') {
+      return finish(response.stopReason)
+    }
     const calls = toolCalls(assistant)
-    if (calls.length === 0) return finish(response.stopReason === 'max_tokens' ? 'max_tokens' : 'end')
+    if (calls.length === 0) return finish('end')
 
     const results: ToolResultBlock[] = []
     for (const call of calls) {
       context.signal.throwIfAborted()
       onEvent?.({ type: 'tool-start', call })
-      const result = await runToolCall(registry, context, call)
+      const result = await runToolCall(registry, context, call, permissionMode)
       results.push(result)
       onEvent?.({ type: 'tool-result', call, result })
     }
@@ -80,7 +99,8 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
 async function runToolCall(
   registry: ToolRegistry,
   context: ToolContext,
-  call: ToolCallBlock
+  call: ToolCallBlock,
+  mode: () => PermissionMode
 ): Promise<ToolResultBlock> {
   const fail = (content: string): ToolResultBlock => ({ type: 'tool_result', callId: call.id, content, isError: true })
 
@@ -91,7 +111,7 @@ async function runToolCall(
   if (problem) return fail(`Invalid input: ${problem}`)
 
   try {
-    if (tool.permission !== 'read') {
+    if (needsApproval(mode(), tool.permission)) {
       const preview = tool.preview
         ? await tool.preview(call.input, context)
         : { summary: `${tool.name} ${JSON.stringify(call.input)}` }

@@ -96,6 +96,33 @@ test('tool sonucu modele geri verilir ve döngü sürer', async () => {
   assert.equal(result.messages.length, 4)
 })
 
+test('akan parçalar delta olayı olarak iletilir', async () => {
+  const provider = new FakeProvider([
+    (request) => {
+      request.onDelta?.({ kind: 'reasoning', text: 'düşün' })
+      request.onDelta?.({ kind: 'text', text: 'cevap' })
+      return reply('cevap')
+    }
+  ])
+  const events: AgentEvent[] = []
+  await runAgent({
+    provider,
+    registry,
+    context: makeContext(),
+    system: '',
+    messages: [textMessage('user', 'x')],
+    onEvent: (event) => events.push(event)
+  })
+  assert.deepEqual(
+    events.flatMap((event) => (event.type === 'delta' ? [event.delta] : [])),
+    [
+      { kind: 'reasoning', text: 'düşün' },
+      { kind: 'text', text: 'cevap' }
+    ]
+  )
+  assert.equal(events.at(-2)?.type, 'assistant-message')
+})
+
 test('bilinmeyen tool ve geçersiz girdi hata sonucu olarak döner', async () => {
   const provider = new FakeProvider([callTool('nope', {}), callTool('echo', { text: 5 }), reply('tamam')])
   await runAgent({ provider, registry, context: makeContext(), system: '', messages: [textMessage('user', 'x')] })
@@ -142,6 +169,37 @@ test('read tool onay istemez, onaylanan write tool çalışır', async () => {
   assert.equal(context.approvals.length, 1)
 })
 
+test('always-ask: okuma tool\'u da onay ister', async () => {
+  const context = makeContext({ approve: true })
+  const provider = new FakeProvider([callTool('echo', { text: 'a' }), reply('tamam')])
+  await runAgent({
+    provider,
+    registry,
+    context,
+    system: '',
+    messages: [textMessage('user', 'x')],
+    permissionMode: () => 'always-ask'
+  })
+  assert.equal(context.approvals.length, 1)
+  assert.equal(context.approvals[0]?.tool, 'echo')
+})
+
+test('never-ask: write tool onaysız çalışır', async () => {
+  executedWrites = 0
+  const context = makeContext({ approve: false })
+  const provider = new FakeProvider([callTool('set_value', { value: 'x' }), reply('tamam')])
+  await runAgent({
+    provider,
+    registry,
+    context,
+    system: '',
+    messages: [textMessage('user', 'x')],
+    permissionMode: () => 'never-ask'
+  })
+  assert.equal(executedWrites, 1)
+  assert.equal(context.approvals.length, 0)
+})
+
 test('maxTurns aşılınca durur', async () => {
   const provider = new FakeProvider(Array.from({ length: 5 }, () => callTool('echo', { text: 'a' })))
   const result = await runAgent({
@@ -154,6 +212,34 @@ test('maxTurns aşılınca durur', async () => {
   })
   assert.equal(result.reason, 'max_turns')
   assert.equal(provider.requests.length, 3)
+})
+
+test('kesilen yanıttaki tool çağrısı çalıştırılmaz ve geçmişten çıkarılır', async () => {
+  const provider = new FakeProvider([{ ...callTool('echo', { text: 'a' }, 'yarım'), stopReason: 'max_tokens' }])
+  const events: AgentEvent['type'][] = []
+  const result = await runAgent({
+    provider,
+    registry,
+    context: makeContext(),
+    system: '',
+    messages: [textMessage('user', 'x')],
+    onEvent: (event) => events.push(event.type)
+  })
+  assert.equal(result.reason, 'max_tokens')
+  assert.deepEqual(result.messages.at(-1)?.content, [{ type: 'text', text: 'yarım' }])
+  assert.deepEqual(events, ['assistant-message', 'done'])
+})
+
+test('reddetme yanıtında döngü durur', async () => {
+  const provider = new FakeProvider([{ content: [], stopReason: 'refusal' }])
+  const result = await runAgent({
+    provider,
+    registry,
+    context: makeContext(),
+    system: '',
+    messages: [textMessage('user', 'x')]
+  })
+  assert.equal(result.reason, 'refusal')
 })
 
 test('iptal edilince AbortError fırlatır', async () => {

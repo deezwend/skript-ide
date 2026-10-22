@@ -4,7 +4,18 @@ export default defineConfig({
   main: {
     build: {
       // Workspace paketi TypeScript kaynağı olarak duruyor; dışarıda bırakılırsa çalışma anında yüklenemez
-      externalizeDeps: { exclude: ['@skript-ide/runtime-validator', '@skript-ide/i18n'] }
+      externalizeDeps: {
+        exclude: [
+          '@skript-ide/runtime-validator',
+          '@skript-ide/i18n',
+          '@skript-ide/agent',
+          '@skript-ide/language-server',
+          '@skript-ide/parser',
+          '@skript-ide/pattern-compiler',
+          '@skript-ide/syntax-db',
+          '@anthropic-ai/sdk'
+        ]
+      }
     }
   },
   preload: {},

@@ -9,6 +9,7 @@ import {
   type ServerStatus,
   type SkriptVersionOption
 } from '../../shared/ipc'
+import { AgentPanel } from './agent-panel'
 import { pickAddons } from './addon-picker'
 import { api } from './api'
 import { ServerConsole } from './console'
@@ -18,7 +19,7 @@ import { SkriptLspClient, type LspStatus, type MigrationItem } from './lsp/clien
 import { applySemanticTheme, SKRIPT_LSP_THEME_ID } from './lsp/theme'
 import { pathForUri, readWorkspace, uriForPath } from './lsp/workspace'
 import { MigrationView, type MigrationValidation } from './migration-view'
-import { languageName, monaco } from './monaco'
+import { languageForPath, languageName, monaco } from './monaco'
 import { OutlinePanel } from './outline'
 import { basename, dirname, extname, samePath } from './paths'
 import { ProblemsPanel } from './problems'
@@ -620,6 +621,62 @@ function notifySavedFile(doc: OpenDocument | null): void {
   languageServer.workspaceFileChanged(uriForPath(doc.path), doc.model.getValue())
 }
 
+// --- AI Agent ---
+
+/** Agent bir dosyayı diskte değiştirdi: temiz sekmeyi yeniden yükle, kirli sekmeyi ellemeden uyar. */
+async function reloadChangedFile(path: string): Promise<void> {
+  const doc = docs.documents.find((candidate) => candidate.path !== null && samePath(candidate.path, path))
+  const content = await api.readFile(path)
+  if (doc) {
+    if (docs.isDirty(doc)) {
+      showStatus(
+        l(
+          `Agent "${docs.title(doc)}" dosyasını diskte değiştirdi; sekmede kaydedilmemiş değişiklikler olduğu için yeniden yüklenmedi`,
+          `The agent changed "${docs.title(doc)}" on disk; the tab was not reloaded because it has unsaved changes`
+        ),
+        'error'
+      )
+      return
+    }
+    docs.replaceWithSaved(doc, content)
+  }
+  if (extname(path) === '.sk') languageServer.workspaceFileChanged(uriForPath(path), content)
+}
+
+const agentPanel = new AgentPanel(
+  {
+    panel: $('#agent-panel'),
+    modelButton: $<HTMLButtonElement>('#agent-model'),
+    modelSelect: $<HTMLSelectElement>('#agent-model-select'),
+    effortSelect: $<HTMLSelectElement>('#agent-effort-select'),
+    permissionSelect: $<HTMLSelectElement>('#agent-permission-select'),
+    newButton: $<HTMLButtonElement>('#agent-new'),
+    historyButton: $<HTMLButtonElement>('#agent-history'),
+    sessionsDialog: $<HTMLDialogElement>('#agent-sessions-dialog'),
+    closeButton: $<HTMLButtonElement>('#agent-close'),
+    transcript: $('#agent-transcript'),
+    form: $<HTMLFormElement>('#agent-form'),
+    input: $<HTMLTextAreaElement>('#agent-input'),
+    sendButton: $<HTMLButtonElement>('#agent-send'),
+    status: $('#agent-status'),
+    settingsDialog: $<HTMLDialogElement>('#agent-settings-dialog')
+  },
+  {
+    onFileChanged: (path) => void run(() => reloadChangedFile(path)),
+    hasUnsavedChanges: (relativePath) => {
+      const root = project?.root
+      if (!root) return false
+      const separator = root.includes('\\') ? '\\' : '/'
+      const absolute = `${root.replace(/[\\/]+$/, '')}${separator}${relativePath.replace(/[\\/]/g, separator)}`
+      return docs.documents.some((doc) => doc.path !== null && samePath(doc.path, absolute) && docs.isDirty(doc))
+    },
+    languageForPath,
+    problems: () => problems.report(),
+    onVisibilityChange: () => $('#status-agent').classList.toggle('active', agentPanel.visible)
+  }
+)
+$('#status-agent').addEventListener('click', () => agentPanel.toggle())
+
 const actions: Record<MenuAction, () => unknown> = {
   'new-file': () => docs.newUntitled(),
   'open-file': async () => {
@@ -683,6 +740,7 @@ const actions: Record<MenuAction, () => unknown> = {
     if (versionOptions.length === 0) versionOptions = await api.listSkriptVersions()
     migrationView.open()
   },
+  'toggle-agent': () => agentPanel.toggle(),
   'go-to-symbol': () => {
     if (!docs.active) {
       showStatus(l('Sembole gitmek için önce bir dosya aç', 'Open a file first to go to a symbol'), 'error')
@@ -750,12 +808,20 @@ void serverConsole.connect()
 // Klasör açılmadan önce de seçili bir sürüm olsun (varsayılan ya da bu oturumda seçilen)
 void run(async () => {
   versionOptions = await api.listSkriptVersions()
-  applyProject(await api.openProject(null))
+  // Önceki oturumda açılan klasör varsa onu yeniden aç; yoksa proje dışı başla
+  const last = await api.lastProject()
+  if (last) {
+    await explorer.setRoot(last)
+    applyProject(await api.openProject(last))
+    await syncWorkspace(last)
+  } else {
+    applyProject(await api.openProject(null))
+  }
 })
 
 if (import.meta.env.DEV) {
   // Geliştirirken konsoldan erişmek için
   Object.assign(window, {
-    __skriptIde: { editor, docs, monaco, problems, syntaxBrowser, languageServer, outline }
+    __skriptIde: { editor, docs, monaco, problems, syntaxBrowser, languageServer, outline, agentPanel }
   })
 }

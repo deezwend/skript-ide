@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { editFileTool, listDirTool, readFileTool, searchFilesTool, ToolError } from '../src/index'
 import { makeContext, makeProject } from './helpers'
@@ -91,7 +91,43 @@ test('edit_file bulunamayan ya da birden çok geçen metni reddeder', () =>
     )
     await assert.rejects(
       editFileTool.execute({ path: 'lib/util.sk', old_text: 'broadcast "hi"', new_text: 'x' }, ctx),
-      /more than once/
+      /appears 2 times .*lines 2, 3/
     )
     assert.equal(await readFile(join(root, 'lib/util.sk'), 'utf8'), FILES['lib/util.sk'])
+  }))
+
+test('edit_file CRLF dosyada çok satırlı metni bulur, satır sonlarını korur', () =>
+  withProject(async (root) => {
+    const ctx = makeContext({ projectRoot: root })
+    const path = join(root, 'futbol.sk')
+    await writeFile(path, 'on join:\r\n\tsend "a" to player\r\n\tsend "b" to player\r\n', 'utf8')
+
+    await editFileTool.execute(
+      {
+        path: 'futbol.sk',
+        old_text: '\tsend "a" to player\n\tsend "b" to player',
+        new_text: '\tsend "c" to player\n\tsend "b" to player'
+      },
+      ctx
+    )
+    assert.equal(await readFile(path, 'utf8'), 'on join:\r\n\tsend "c" to player\r\n\tsend "b" to player\r\n')
+
+    await editFileTool.execute({ path: 'futbol.sk', old_text: '\tsend "c" to player\n', new_text: '' }, ctx)
+    assert.equal(await readFile(path, 'utf8'), 'on join:\r\n\tsend "b" to player\r\n')
+  }))
+
+test('edit_file aynı satır birden çok geçtiğinde line ile seçer', () =>
+  withProject(async (root) => {
+    const ctx = makeContext({ projectRoot: root })
+    const input = { path: 'lib/util.sk', old_text: '\tbroadcast "hi"', new_text: '\tbroadcast "selam"' }
+
+    await assert.rejects(editFileTool.execute(input, ctx), /lines 2, 3/)
+    await assert.rejects(editFileTool.execute({ ...input, line: 9 }, ctx), /does not start at line 9/)
+    await assert.rejects(editFileTool.execute({ ...input, line: 0 }, ctx), /positive integer/)
+
+    await editFileTool.execute({ ...input, line: 3 }, ctx)
+    assert.equal(
+      await readFile(join(root, 'lib/util.sk'), 'utf8'),
+      'function hi():\n\tbroadcast "hi"\n\tbroadcast "selam"\n'
+    )
   }))

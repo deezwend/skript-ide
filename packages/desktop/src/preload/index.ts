@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IpcChannel, type MenuAction, type ServerStatus, type SkriptIdeApi } from '../shared/ipc'
+import { IpcChannel, type AgentUiEvent, type MenuAction, type ServerStatus, type SkriptIdeApi } from '../shared/ipc'
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_event: IpcRendererEvent, value: T) => listener(value)
@@ -30,9 +30,29 @@ const api: SkriptIdeApi = {
   onServerLog: (listener) => subscribe<string>(IpcChannel.serverLogOutput, listener),
   listSkriptVersions: () => ipcRenderer.invoke(IpcChannel.skriptVersions),
   openProject: (root) => ipcRenderer.invoke(IpcChannel.openProject, root),
+  lastProject: () => ipcRenderer.invoke(IpcChannel.lastProject),
   setSkriptVersion: (version) => ipcRenderer.invoke(IpcChannel.setSkriptVersion, version),
   setAddons: (addons) => ipcRenderer.invoke(IpcChannel.setAddons, addons),
-  validateOnVersion: (version, requests) => ipcRenderer.invoke(IpcChannel.validateOnVersion, version, requests)
+  validateOnVersion: (version, requests) => ipcRenderer.invoke(IpcChannel.validateOnVersion, version, requests),
+  agentGetState: () => ipcRenderer.invoke(IpcChannel.agentState),
+  agentListProviders: (refresh) => ipcRenderer.invoke(IpcChannel.agentProviders, refresh === true),
+  agentSetSettings: (settings) => ipcRenderer.invoke(IpcChannel.agentSetSettings, settings),
+  agentSetApiKey: (providerId, key) => ipcRenderer.invoke(IpcChannel.agentSetApiKey, providerId, key),
+  agentKeySource: (providerId) => ipcRenderer.invoke(IpcChannel.agentKeySource, providerId),
+  agentCodexLogin: () => ipcRenderer.invoke(IpcChannel.agentCodexLogin),
+  agentCodexLogout: () => ipcRenderer.invoke(IpcChannel.agentCodexLogout),
+  agentSend: (text, problems) => ipcRenderer.invoke(IpcChannel.agentSend, text, problems),
+  agentListFiles: () => ipcRenderer.invoke(IpcChannel.agentListFiles),
+  agentCancel: () => ipcRenderer.invoke(IpcChannel.agentCancel),
+  agentReset: () => ipcRenderer.invoke(IpcChannel.agentReset),
+  agentListSessions: () => ipcRenderer.invoke(IpcChannel.agentSessions),
+  agentLoadSession: (id) => ipcRenderer.invoke(IpcChannel.agentLoadSession, id),
+  agentDeleteSession: (id) => ipcRenderer.invoke(IpcChannel.agentDeleteSession, id),
+  agentUndo: () => ipcRenderer.invoke(IpcChannel.agentUndo),
+  agentSetGoal: (goal) => ipcRenderer.invoke(IpcChannel.agentSetGoal, goal),
+  agentSetPermissionMode: (mode) => ipcRenderer.invoke(IpcChannel.agentSetPermissionMode, mode),
+  agentRespondApproval: (id, approved) => ipcRenderer.send(IpcChannel.agentApproval, id, approved),
+  onAgentEvent: (listener) => subscribe<AgentUiEvent>(IpcChannel.agentEvent, listener)
 }
 
 contextBridge.exposeInMainWorld('skriptIde', api)

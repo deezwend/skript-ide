@@ -20,7 +20,30 @@ export interface ToolResultBlock {
   isError?: boolean
 }
 
-export type ContentBlock = TextBlock | ToolCallBlock | ToolResultBlock
+/**
+ * Sağlayıcıya özgü, bizim yorumlamadığımız blok (örn. Anthropic'in `thinking` blokları).
+ * Aynı sağlayıcıya sonraki isteklerde aynen geri gönderilmeli; diğer sağlayıcılar yok sayar.
+ */
+export interface ProviderDataBlock {
+  type: 'provider_data'
+  /** Bloğu üreten katalog sağlayıcısı (`anthropic`, `minimax`…). */
+  provider: string
+  data: unknown
+}
+
+/**
+ * Modelin düşünme (reasoning) metni; OpenAI uyumlu sağlayıcıların `reasoning_content` / `reasoning`
+ * alanından gelir. Arayüzde gösterilir; yalnızca aynı sağlayıcıya ve aynı tur içinde geri gönderilir.
+ */
+export interface ReasoningBlock {
+  type: 'reasoning'
+  provider: string
+  text: string
+  /** Sağlayıcının kullandığı alan adı; geri gönderirken aynısı kullanılır. */
+  field: 'reasoning_content' | 'reasoning'
+}
+
+export type ContentBlock = TextBlock | ToolCallBlock | ToolResultBlock | ProviderDataBlock | ReasoningBlock
 
 export interface Message {
   role: 'user' | 'assistant'

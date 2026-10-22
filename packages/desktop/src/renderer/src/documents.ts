@@ -100,6 +100,20 @@ export class DocumentManager {
     this.emit()
   }
 
+  /**
+   * Diskte başka biri (örn. agent) değiştirdiği dosyanın yeni içeriğini sekmeye alır.
+   * Değişiklik geri alınabilir; içerik diskle aynı olduğu için belge temiz sayılır.
+   */
+  replaceWithSaved(doc: OpenDocument, content: string): void {
+    if (doc.model.getValue() === content) return
+    doc.model.pushStackElement()
+    doc.model.pushEditOperations(null, [{ range: doc.model.getFullModelRange(), text: content }], () => null)
+    doc.model.pushStackElement()
+    doc.savedVersionId = doc.model.getAlternativeVersionId()
+    doc.wasDirty = false
+    this.emit()
+  }
+
   /** Kaydedildiyse true, kullanıcı vazgeçtiyse false döner. */
   async save(doc = this.active): Promise<boolean> {
     if (!doc) return false

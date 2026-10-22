@@ -21,7 +21,9 @@ import {
   type SkriptVersionOption,
   type ValidateRequest
 } from '../shared/ipc'
-import { readTextFile, writeTextFile } from './workspace'
+import { allowPath, readTextFile, writeTextFile } from './workspace'
+import { readAppSettings, updateAppSettings } from './app-settings'
+import { statSync } from 'node:fs'
 
 import { l } from '@skript-ide/i18n'
 interface ProjectFile {
@@ -31,6 +33,11 @@ interface ProjectFile {
 }
 
 let current: ProjectState = { root: null, settings: { skriptVersion: DEFAULT_SKRIPT_VERSION }, fromFile: false }
+
+/** Açık proje; agent dosya erişimini ve sistem prompt'unu buna göre kurar. */
+export function getProjectState(): ProjectState {
+  return current
+}
 
 /**
  * `skript-project.json`'u okur. Okuma ve yazma `workspace` modülünden geçer; yani yalnızca
@@ -157,10 +164,29 @@ export function setupProject(server: SkriptServer, startInBackground: () => void
     }))
   })
 
+  ipcMain.handle(IpcChannel.lastProject, (): string | null => {
+    const saved = readAppSettings().lastProject
+    if (typeof saved !== 'string') return null
+    try {
+      if (!statSync(saved).isDirectory()) return null
+    } catch {
+      return null // Klasör silinmiş ya da taşınmış
+    }
+    // Uygulama yeniden başladığında dosya erişimi izni sıfırlanır; geri yüklenen klasöre yeniden verilir
+    allowPath(saved)
+    return saved
+  })
+
   ipcMain.handle(IpcChannel.openProject, async (_event, root: unknown): Promise<ProjectState> => {
     if (root === null) {
       current = { root: null, settings: { skriptVersion: current.settings.skriptVersion }, fromFile: false }
     } else {
+      // Son açılan klasör bir sonraki açılışta geri yüklenir; yazılamazsa proje yine açılır
+      try {
+        updateAppSettings({ lastProject: String(root) })
+      } catch {
+        // ayar dosyası yazılamadı
+      }
       const state = await readProject(String(root))
       current = { root: state.root, settings: state.settings, fromFile: state.fromFile, warning: state.warning }
     }

@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { getLocale, l, type Locale } from '@skript-ide/i18n'
 import { IpcChannel } from '../shared/ipc'
+import { setupAgent } from './agent'
 import { initLocale, saveLocale } from './locale'
 import { buildAppMenu } from './menu'
 import { setupValidator } from './validator'
@@ -181,7 +182,8 @@ function selectLocale(locale: Locale): void {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(buildAppMenu(selectLocale))
   registerIpcHandlers()
-  setupValidator(() => mainWindow)
+  const server = setupValidator(() => mainWindow)
+  setupAgent(() => mainWindow, server)
   createWindow()
 
   app.on('activate', () => {

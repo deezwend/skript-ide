@@ -104,6 +104,37 @@
           </div>
         </section>
       </main>
+
+      <aside id="agent-panel" aria-label="AI Agent" hidden>
+        <div class="agent-header">
+          <span class="agent-title">AI Agent</span>
+          <button id="agent-model" class="agent-model" title=""></button>
+          <span class="spacer"></span>
+          <button id="agent-history" class="icon-button" title="Konuşma geçmişi" data-en-title="Conversation history">☰</button>
+          <button id="agent-new" class="icon-button" title="Yeni konuşma" data-en-title="New conversation">＋</button>
+          <button id="agent-close" class="icon-button" title="Kapat" data-en-title="Close">✕</button>
+        </div>
+        <div id="agent-transcript" role="log" aria-live="polite"></div>
+        <form id="agent-form" autocomplete="off">
+          <textarea
+            id="agent-input"
+            rows="3"
+            spellcheck="false"
+            placeholder="Bir şey sor ya da değişiklik iste (@ ile dosya etiketle, Enter gönderir, Shift+Enter yeni satır)"
+            data-en-placeholder="Ask something or request a change (@ to tag a file, Enter sends, Shift+Enter for a new line)"
+          ></textarea>
+          <div class="agent-quick">
+            <select id="agent-model-select" title="Model" data-en-title="Model"></select>
+            <select id="agent-effort-select" title="Düşünme seviyesi (effort)" data-en-title="Reasoning effort"></select>
+            <select id="agent-permission-select" title="İzin modu" data-en-title="Permission mode"></select>
+          </div>
+          <div class="agent-composer-bar">
+            <span id="agent-status"></span>
+            <span class="spacer"></span>
+            <button id="agent-send" type="submit" class="primary"></button>
+          </div>
+        </form>
+      </aside>
     </div>
 
     <footer id="statusbar">
@@ -117,6 +148,7 @@
       <span id="status-language"></span>
       <button id="status-skript" class="status-item" aria-haspopup="listbox" aria-expanded="false"></button>
       <button id="status-addons" class="status-item"></button>
+      <button id="status-agent" class="status-item" title="AI Agent (Ctrl+Shift+A)" data-en-title="AI Agent (Ctrl+Shift+A)">✦ Agent</button>
     </footer>
 
     <div id="version-picker" role="listbox" aria-label="Skript sürümü" data-en-aria-label="Skript version" hidden></div>
@@ -144,6 +176,8 @@
     </dialog>
 
     <dialog id="addon-dialog" class="wide-dialog" aria-label="Addon'lar" data-en-aria-label="Addons"></dialog>
+    <dialog id="agent-sessions-dialog" class="wide-dialog" aria-label="Konuşma geçmişi" data-en-aria-label="Conversation history"></dialog>
+    <dialog id="agent-settings-dialog" class="wide-dialog" aria-label="Agent Ayarları" data-en-aria-label="Agent Settings"></dialog>
     <dialog id="migration-dialog" class="wide-dialog" aria-label="Sürüm Geçiş Asistanı" data-en-aria-label="Version Migration Assistant"></dialog>
 
     <script type="module" src="./src/main.ts"></script>

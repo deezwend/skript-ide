@@ -38,7 +38,9 @@ export function buildAppMenu(onSelectLocale: (locale: Locale) => void): Menu {
         { label: l('Doğrula', 'Validate'), accelerator: 'F5', click: send('validate') },
         { type: 'separator' },
         { label: l("Addon'lar...", 'Addons...'), click: send('addons') },
-        { label: l('Sürüm Geçiş Asistanı...', 'Version Migration Assistant...'), click: send('migration') }
+        { label: l('Sürüm Geçiş Asistanı...', 'Version Migration Assistant...'), click: send('migration') },
+        { type: 'separator' },
+        { label: l('AI Agent', 'AI Agent'), accelerator: 'CmdOrCtrl+Shift+A', click: send('toggle-agent') }
       ]
     },
     {

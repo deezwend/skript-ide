@@ -1,5 +1,5 @@
 import { SKRIPT_LANGUAGE_ID } from '@skript-ide/skript-language'
-import type { SkriptDiagnostic, ValidationResult } from '../../shared/ipc'
+import type { ProblemReport, SkriptDiagnostic, ValidationResult } from '../../shared/ipc'
 import type { DocumentManager } from './documents'
 import { monaco } from './monaco'
 import { basename } from './paths'
@@ -56,6 +56,21 @@ export class ProblemsPanel {
       else counts.hints++
     }
     return counts
+  }
+
+  /** Sekmedeki sorunlar, dosya ve satır sırasıyla; adsız belgeler başlıklarıyla. Agent'ın `@Problems` etiketi için. */
+  report(): ProblemReport[] {
+    return this.entries()
+      .sort((a, b) => a.source.localeCompare(b.source) || a.line - b.line || a.column - b.column)
+      .map((entry) => ({
+        path: entry.source.startsWith('untitled:') ? this.title(entry.source) : entry.source,
+        line: entry.line,
+        column: entry.column,
+        severity: entry.severity,
+        origin: entry.origin,
+        message: entry.message,
+        ...(entry.code ? { code: entry.code } : {})
+      }))
   }
 
   setResult(result: ValidationResult): void {
