@@ -1,0 +1,480 @@
+# MTskR: Minecraft TrainSkript Railway
+# Minecraft Transit Railway mod in Paper without resource packs
+# https://github.com/ryanpeng69/mtskr/
+import:
+    org.bukkit.Registry
+    org.bukkit.Sound
+on load:
+    reload mtskr lang from console
+    reload mtskr config from console
+    reload mtskr data from console
+on join:
+    set {-MTskR::lang::%player%} to best mtskr language for language of player
+on language change:
+    wait 1 tick
+    set {-MTskR::lang::%player%} to best mtskr language for language of player
+    send formatted mtskr_message({-MTskR::lang::%player%}, "language_changed")
+on tab complete of ("mtskr" or "mtskr:mtskr"):
+    set tab completions for position 1 to "help, lang" split at ", "
+    if sender is console:
+        add "model, reload, config" split at ", " to tab completions for position 1
+    else if sender is op:
+        add "model, gui, reload, edit, route, config" split at ", " to tab completions for position 1
+    if tab arg 1 matches "models?":
+        if sender is console:
+            set tab completions for position 2 to "list, download, sound" split at ", "
+        else if sender is op:
+            set tab completions for position 2 to "create, rebuild, list, download, sound" split at ", "
+        if tab arg 2 matches "sounds?":
+            set tab completions for position 3 to mtskr models
+            model tab arg 3 exists
+            set tab completions for position 4 to "move|break|door_open|door_close" split at "|"
+            if tab arg 4 matches "move|break|door_open|door_close":
+                loop ...Registry.SOUNDS:
+                    add (loop-value.getKey().toString()) to tab completions for position 5
+                set tab completions for position 6 to decimals between 0.0 and 2.0
+                set tab completions for position 7 to decimals between 0.0 and 2.0
+                if tab arg 4 matches "move":
+                    set tab completions for position 8 to "<frequency(ticks)>"
+        sender is a player
+        if tab arg 2 is "rebuild":
+            set tab completions for position 3 to train models
+        else if tab arg 2 is "create":
+            loop train models:
+                add "%loop-value% -f" to tab completions for position 3
+    else if tab arg 1 matches "edit|modify|sidings?|platforms?":
+        sender is op
+        set {_yaml} to "MTskR.data.rails.%world of player%"
+        set tab completions for position 2 to yaml node keys "" of {_yaml}
+        tab arg 2 matches "-?\d+,-?\d+,-?\d+"
+        set tab completions for position 3 to yaml node keys tab arg 2 of {_yaml}
+        yaml node keys tab arg 2 of {_yaml} contains tab arg 3
+        set {_type} to yaml value "%tab arg 2%.%tab arg 3%.type" of {_yaml}
+        set tab completions for position 4 to "goto"
+        {_type} matches "siding|platform"
+        add "name" to tab completions for position 4
+        if {_type} is "siding":
+            add "train, schedule, route, stop" split at ", " to tab completions for position 4
+            if tab arg 4 matches "trains?":
+                set tab completions for position 5 to train models
+            else if tab arg 4 is "schedule":
+                set tab completions for position 5 to integers from 0 to 300
+            else if tab arg 4 matches "routes?":
+                set tab completions for position 5 to "add|remove|list" split at "|"
+                if tab arg 5 matches "add|remove":
+                    set tab completions for position 6 to yaml node keys "" of "MTskR.data.routes.%world of player%"
+        else if {_type} is "platform":
+            add "stop_time" to tab completions for position 4
+    else if tab arg 1 matches "routes?":
+        sender is op
+        set tab completions for position 2 to "remove, list, edit" split at ", "
+        if tab arg 2 matches "edit|remove|delete":
+            if tab arg 2 matches "remove|delete":
+                loop (yaml node keys "" of "MTskR.data.routes.%world of player%"):
+                    add "%loop-value%.out" to tab completions for position 3 
+                    add "%loop-value%.in" to tab completions for position 3
+            else:
+                set tab completions for position 3 to (yaml node keys "" of "MTskR.data.routes.%world of player%")
+            if (yaml node keys "" of "MTskR.data.routes.%world of player%") contains tab arg 3:
+                set tab completions for position 4 to "name|color" split at "|"
+    else if tab arg 1 is "reload":
+        non ops does not contain sender
+        set tab completions for position 2 to "config, data, scripts, script, all, lang" split at ", "
+        if tab arg 2 is "script":
+            set tab completions for position 3 to (all scripts where [input contains "mtskr."])
+    else if tab arg 1 matches "config|cfg|settings?|options?":
+        non ops does not contain sender
+        set tab completions for position 2 to "set, get, reset, list" split at ", "
+        if tab arg 2 matches "set|get":
+            set tab completions for position 3 to mtskr configs
+            if tab arg 2 is "set":
+                tab arg 3 is any of mtskr configs
+                set tab completions for position 4 to mtskr config default of tab arg 3
+    else if tab arg 1 matches "lang(uage)?|locale":
+        loop all loaded yaml where [input starts with "MTskR.lang."]:
+            set {_name} to loop-value
+            replace "MTskR.lang." in {_name} with ""
+            add {_name} to tab completions for position 2
+    else if tab arg 1 matches "help|tutorial":
+        set tab completions for position 2 to "create_railway, command" split at ", "
+        if tab arg 2 is "create_railway":
+            set tab completions for position 3 to integers from 1 to 5
+        else if tab arg 2 matches "command|cmd":
+            set tab completions for position 3 to integers from 1 to 2
+    else if tab arg 1 is "debug":
+        non ops does not contain sender
+        if tab arg 2 is set:
+            set {_args::*} to tab args
+            clear {_args::1}
+            set tab completions for last position to indexes of {-MTskR::%join {_args::*} by "::"%::*}
+        else:
+            set tab completions for position 2 to indexes of {-MTskR::*}
+command mtskr [<text>] [<text>] [<text>] [<text>] [<text>] [<texts>]:
+    prefix: mtskr
+    trigger:
+        set {_lang} to {-MTskR::lang::%sender%}
+        if (whether arg-1 matches "models?") and (whether non ops does not contain sender) are true:
+            if (whether arg-2 is "create") and (whether sender is op) are true:
+                if arg-4 is "-f":
+                    force create train model arg-3
+                else:
+                    create train model arg-3
+            else if (whether arg-2 is "rebuild" and (whether sender is op) are true):
+                sender is a player
+                if mtskr model arg-3 exists:
+                    load yaml "plugins\Skript\scripts\%mtskr dir%models\%arg-3%.yml" as "MTskR.model.%arg-3%"
+                    set {_facing_yaw} to yaml value "info.facing" of "MTskR.model.%arg-3%"
+                    set {_rotates} to closest quarter of player's yaw - {_facing_yaw}
+                    if {_rotates} is smaller than 0:
+                        add 360 to {_rotates}
+                    set {_times} to {_rotates} / 90
+                    loop (yaml node keys "" of "MTskR.model.%arg-3%") except "info" and "sound":
+                        set {_base} to player's location
+                        set yaw of {_base} to closest quarter of yaw of {_base}
+                        set {_loc} to mtskr_rotateRelativeCoor({_base}, {_facing_yaw}, yaml value "%loop-value%.loc" of "MTskR.model.%arg-3%")
+                        set {_data} to (yaml value "%loop-value%.block" of "MTskR.model.%arg-3%")
+                        loop {_times} times:
+                            set blockdata tag "facing" of {_data} to (quarter clockwise direction of blockdata tag "facing" of {_data})
+                        update block at {_loc} to be {_data}
+                        if (yaml value "%loop-value%.seat" of "MTskR.model.%arg-3%") is true:
+                            add block at {_loc} to {MTskR::seats::*}
+                else:
+                    send error mtskr_message({_lang}, "model.does_not_exist", "model", arg-3)
+            else if arg-2 matches "list|info":
+                send formatted "&e%join train models by "&7, &e"%"
+            else if (whether arg-2 is "download") and (whether sender is op) are true:
+                if arg-3 is set:
+                    open page (arg-3 parsed as int) of models online to player
+                else:
+                    open models online to player
+            else if arg-2 matches "sounds?":
+                if model arg-3 exists:
+                    set {_yaml} to "MTskR.model.%arg-3%"
+                    if arg-4 matches "move|break|door_open|door_close":
+                        if ...Registry.SOUNDS transformed using (input.getKey().toString()) contains arg-5:
+                            load yaml "plugins\Skript\scripts\%mtskr dir%models\%arg-3%.yml" as {_yaml}
+                            set yaml value "sound.%arg-4%.key" of {_yaml} to arg-5
+                            set {_split::*} to split "%arg-6%" at " "
+                            if {_split::1} parsed as number is between 0 and 2:
+                                set yaml value "sound.%arg-4%.volume" of {_yaml} to {_split::1}
+                            else:
+                                set yaml value "sound.%arg-4%.volume" of {_yaml} to 0.5
+                            if {_split::2} parsed as number is between 0 and 2:
+                                set yaml value "sound.%arg-4%.pitch" of {_yaml} to {_split::2}
+                            else:
+                                set yaml value "sound.%arg-4%.pitch" of {_yaml} to 1
+                            if arg-4 matches "move":
+                                if {_split::3} parsed as int is greater than 0:
+                                    set yaml value "sound.%arg-4%.frequency" of {_yaml} to {_split::3}
+                                else:
+                                    set yaml value "sound.%arg-4%.frequency" of {_yaml} to 120
+                            save yaml {_yaml} without extra lines between nodes
+                    else:
+                        loop "move|break|door_open|door_close" split at "|":
+                            set {_sound} to yaml value "sound.%loop-value%.key" of {_yaml}
+                            set {_volume} to yaml value "sound.%loop-value%.volume" of {_yaml}
+                            set {_pitch} to yaml value "sound.%loop-value%.pitch" of {_yaml}
+                            if loop-value matches "move":
+                                set {_frequency} to yaml value "sound.%loop-value%.frequency" of {_yaml}
+                            else:
+                                set {_frequency} to ""
+                            if sender is a player:
+                                send formatted "<cmd:mtskr model sound %arg-3% %loop-value%>&e%loop-value%&7: &6%{_sound}% %{_volume}% %{_pitch}% %{_frequency}%"
+                            else:
+                                send "&e%loop-value%&7: &6%{_sound}% %{_volume}% %{_pitch}% %{_frequency}%"
+                else:
+                    send error mtskr_message({_lang}, "models.dne")
+            else:
+                set {_click_to_use} to mtskr_message({_lang}, "main.cmd.click_to_use")
+                if sender is a player:
+                    loop "create, rebuild, list, download, sound" split at ", ":
+                        send formatted "<ttp:%{_click_to_use}%><sgt:/mtskr model %loop-value% >&6/mtskr model %loop-value% ..."
+                else:
+                    send join ("&e" and (sorted "list, sound" split at ", ")) with " &7| &e"
+        else if (whether arg-1 matches "gui|items|get") and (whether sender is op) are true:
+            open mtskr items gui for player
+        else if (whether arg-1 is "reload") and (whether non ops does not contain sender) are true:
+            if arg-2 matches "scripts|all":
+                set {_dir} to "%current script%"
+                regex replace "(\\)?[^\\]+$" in {_dir} with "$1"
+                make sender execute command "sk reload %{_dir}%"
+            else if arg-2 is "script":
+                if arg-3 is set:
+                    make player execute command "sk reload %arg-3%"
+            else if arg-2 is "config":
+                reload mtskr config
+            else if arg-2 is "data":
+                reload mtskr data
+            else if arg-2 is "lang":
+                reload mtskr lang
+            else:
+                reload mtskr config
+                reload mtskr data
+                reload mtskr lang
+        else if (whether arg-1 matches "edit|modify|sidings?|platforms?") and (whether sender is op) are true:
+            if:
+                arg-2 matches "-?\d+,-?\d+,-?\d+"
+                arg-3 matches "-?\d+,-?\d+,-?\d+"
+            then:
+                set {_node} to "%arg-2%.%arg-3%"
+                set {_world} to world of player
+                set {_yaml} to "MTskR.data.rails.%{_world}%"
+                set {_type} to yaml value "%{_node}%.type" of {_yaml}
+                if {_type} matches "siding|platform":
+                    if arg-4 matches "trains?":
+                        if {_type} is "siding":
+                            if train models contains arg-5:
+                                set yaml value "%{_node}%.siding.train" of {_yaml} to {_lv}
+                                save yaml {_yaml} without extra lines between nodes
+                                update train for siding {_node} in world {_expr-3}
+                                play sound "entity.experience_orb.pickup"
+                            else:
+                                let player edit train of {_node} in world {_world}
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.edit.train.not_siding")
+                    else if arg-4 is "schedule":
+                        if {_type} is "siding":
+                            set {_t} to arg-5 parsed as int
+                            if arg-5 is set:
+                                if {_t} is not smaller than 0:
+                                    set yaml value "%{_node}%.schedule" of {_yaml} to {_t}
+                                    save yaml {_yaml} without extra lines between nodes
+                                else:
+                                    send error mtskr_message({_lang}, "main.cmd.edit.schedule.small")
+                            else:
+                                send error mtskr_message({_lang}, "main.cmd.edit.schedule.none")
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.edit.schedule.not_siding")
+                    else if arg-4 matches "routes?":
+                        if {_type} is "siding":
+                            set {_routeyaml} to "MTskR.data.routes.%{_world}%"
+                            set {_cmd} to "/mtskr edit %arg-2% %arg-3% route "
+                            set {_route} to first element of ("%arg-6%" split at " ")
+                            if arg-5 matches "add|remove|list":
+                                if arg-5 is "add":
+                                    if (yaml node keys "" of {_routeyaml}) contains {_route}:
+                                        add {_route} to yaml list "%{_node}%.siding.route" of {_yaml}
+                                        save yaml {_yaml} without extra lines between nodes
+                                        play sound "entity.experience_orb.pickup"
+                                    else:
+                                        send error mtskr_message({_lang}, "main.cmd.edit.route.dne", "name", {_route})
+                                else if arg-5 is "remove":
+                                    if (yaml list "%{_node}%.siding.route" of {_yaml}) contains {_route}:
+                                        remove {_route} from yaml list "%{_node}%.siding.route" of {_yaml}
+                                        save yaml {_yaml} without extra lines between nodes
+                                        play sound "entity.experience_orb.pickup"
+                                        if 2nd element of ("%arg-6%" split at " ") is "dialog":
+                                            let player edit route of siding {_node} in player's world
+                                    else:
+                                        send error mtskr_message({_lang}, "main.cmd.edit.route.not_selected")
+                                else:
+                                    loop yaml list "%{_node}%.siding.route" of {_yaml}:
+                                        add "<sgt:%{_cmd}%remove %loop-value%>" to {_m::*}
+                                    send formatted join {_m::*} by " "
+                            else:
+                                send formatted "&6<sgt:%{_cmd}%add >add <sgt:%{_cmd}%remove >remove <cmd:%{_cmd}%list>list"
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.edit.route.not_siding")
+                    else if arg-4 is "stop_time":
+                        if {_type} is "platform":
+                            set {_stop_time} to arg-5 parsed as int
+                            if {_stop_time} is not between 5 and 60:
+                                send error mtskr_message({_lang}, "main.cmd.edit.stop_time.out")
+                            else:
+                                set yaml value "%{_node}%.platform.stop_time" of {_yaml} to {_time}
+                                save yaml {_yaml} without extra lines between nodes
+                                play sound "entity.experience_orb.pickup"
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.edit.stop_time.not_platform")
+                    else if arg-4 is "name":
+                        set yaml value "%{_node}%.%{_type}%.name" of {_yaml} to arg-5
+                        save yaml {_yaml} without extra lines between nodes
+                        play sound "entity.experience_orb.pickup"
+                    else if arg-4 is "goto":
+                        goto arg-2 arg-3
+                    else if arg-4 is "stop":
+                        if {-MTskR::siding::%{_world}%::%{_node}%::running::*} contains true:
+                            mtskr_stopRoute({_world}, {_node})
+                            send mtskr_message({_lang}, "main.cmd.edit.stopRoute", ("siding", "world"), ({_node}, {_world}))
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.edit.stop_route_false", ("siding", "world"), ({_node}, {_world}))
+                    else:
+                        if yaml value "%{_node}%.type" of {_yaml} is {_type}:
+                            if yaml value "%{_node}%.%{_type}%.name" of {_yaml} is set:
+                                set {_name} to yaml value "%{_node}%.%{_type}%.name" of {_yaml}
+                            open multi action dialog to player:
+                                title: mtskr_message({_lang}, "main.cmd.edit.dialog.title", "type", propercase {_type})
+                                body:
+                                    add text body:
+                                        contents: mtskr_message({_lang}, "main.cmd.edit.dialog.body", ("type", "loc1", "loc2"), ({_type}, {_node} split at "."))
+                                inputs:
+                                    add text input:
+                                        key: "name"
+                                        label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.name")
+                                        initial: ("%{_name}%" if {_name} is set, else "1")
+                                    if {_type} is "platform":
+                                        if yaml value "%{_node}%.platform.stop_time" of {_yaml} is set:
+                                            set {_stop_time} to yaml value "%{_node}%.platform.stop_time" of {_yaml}
+                                        else:
+                                            set {_stop_time} to 5                                            
+                                        add number range input:
+                                            key: "stop_time"
+                                            label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.stop_time")
+                                            start: 5
+                                            end: 60
+                                            step: 1
+                                            initial: {_stop_time}
+                                    else if {_type} is "siding":
+                                        if yaml value "%{_node}%.siding.schedule" of {_yaml} is set:
+                                            set {_schedule} to yaml value "%{_node}%.siding.schedule" of {_yaml}
+                                        else:
+                                            set {_schedule} to 0
+                                        add number range input:
+                                            key: "schedule"
+                                            label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.schedule")
+                                            start: 0
+                                            end: 300
+                                            step: 1
+                                            initial: {_schedule}
+                                actions:
+                                    add callback action button:
+                                        label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.goto")
+                                        trigger:
+                                            set {_split::*} to {_node} split at "."
+                                            goto {_split::1} {_split::2}
+                                    add callback action button:
+                                        label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.update")
+                                        trigger:
+                                            set yaml value "%{_node}%.%{_type}%.name" of {_yaml} to string tag "name" of event-nbt
+                                            if {_type} is "platform":
+                                                set yaml value "%{_node}%.platform.stop_time" of {_yaml} to float tag "stop_time" of event-nbt
+                                            else if {_type} is "siding":
+                                                set yaml value "%{_node}%.siding.schedule" of {_yaml} to float tag "schedule" of event-nbt
+                                            save yaml {_yaml} without extra lines between nodes
+                                            play sound "entity.experience_orb.pickup"
+                                    if {_type} is "siding":
+                                        add callback action button:
+                                            label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.select_train")
+                                            trigger:
+                                                let player edit train of siding {_node} in world {_world}
+                                        add callback action button:
+                                            label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.select_route")
+                                            trigger:
+                                                let player edit route of siding {_node} in world {_world}
+                                        add callback action button:
+                                            label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.refresh_route")
+                                            trigger:
+                                                mtskr_refreshRoute({_node}, {_world})
+                                        add callback action button:
+                                            label: mtskr_message({_lang}, "main.cmd.edit.dialog.label.stop")
+                                            trigger:
+                                                replace "." in {_node} with " "
+                                                make player execute command "mtskr siding %{_node}% stop"
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.edit.incorrect_type", ("loc1", "loc2", "type"), (arg-2, arg-3, {_type}))
+                else:
+                    send error mtskr_message({_lang}, "main.cmd.edit.false", ("loc1", "loc2"), (arg-2, arg-3))
+            else:
+                send error mtskr_message({_lang}, "main.cmd.edit.none")
+        else if (whether arg-1 matches "routes?") and (whether sender is op) are true:
+            set {_yaml} to "MTskR.data.routes.%world of player%"
+            if arg-2 is "edit":
+                if (yaml node keys "" of {_yaml}) contains arg-3:
+                    set {_color} to yaml value "%arg-3%.color" of {_yaml}
+                    if arg-4 is "name":
+                        if arg-5 matches "[^\s\.]+":
+                            if arg-6 is set:
+                                set {_newname} to "%arg-5% %arg-6%"
+                            else:
+                                set {_newname} to arg-5
+                            set yaml value "%{_newname}%.color" of {_yaml} to {_color}
+                            set yaml list "%{_newname}%.nodes" of {_yaml} to yaml list "%arg-3%.nodes" of {_yaml}
+                            clear yaml value arg-3 of {_yaml}
+                            save yaml {_yaml} without extra lines between nodes
+                        else:
+                            send error mtskr_message({_lang}, "items_function.route_creator.false", ("regex", "examples"), ("[^\s\.]+", "e.g. &fexample1||outbound&7, &fexample3&7"))
+                    else if arg-4 is "color":
+                        if arg-5 matches "#?[0-9a-fA-F]{6}":
+                            set yaml value "%arg-3%.color" of {_yaml} to last 6 characters of arg-5
+                            save yaml {_yaml} without extra lines between nodes
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.removeroute.color_false")
+                    else:
+                        send "&7===&6#%arg-3%&7==="
+                        send formatted "<sgt:/mtskr route edit %arg-3% name %arg-3%>&e%mtskr_message({_lang}, "main.cmd.removeroute.name")%&7: %arg-3%"
+                        send formatted "<sgt:/mtskr route edit %arg-3% color %{_color}%>&e%mtskr_message({_lang}, "main.cmd.removeroute.color")%&7: %{_color}%"
+                        send formatted "<sgt:/mtskr route remove %arg-3%>&c%mtskr_message({_lang}, "main.cmd.removeroute.delete")%"
+                else:
+                    make player execute command "mtskr route list"
+            else if arg-2 matches "remove|delete":
+                if (yaml node keys "" of {_yaml}) contains arg-3:
+                    send formatted mtskr_message({_lang}, "main.cmd.removeroute.removed", ("color", "name"), ({_color}, {_name}))
+                    delete yaml value arg-3 of {_yaml}
+                    save yaml {_yaml} without extra lines between nodes
+                else:
+                    make player execute command "mtskr route list remove"
+            else:
+                if arg-3 matches "remove|delete":
+                    send formatted mtskr_message({_lang}, "main.cmd.removeroute.list_remove", "world", world of player)
+                else:
+                    send formatted mtskr_message({_lang}, "main.cmd.removeroute.list_edit", "world", world of player)
+                loop (yaml node keys "" of {_yaml}):
+                    set {_key} to loop-value
+                    set {_color} to yaml value "%loop-value-1%.color" of {_yaml}
+                    set {_nodes::*} to yaml list "%{_key}%.nodes" of {_yaml}
+                    set {_nodes} to join {_nodes::*} by " "
+                    if arg-3 matches "remove|delete":
+                        add "<ttp:%{_nodes}%><sgt:mtskr route remove %{_key}%><#%{_color}%>%{_key}%" to {_list::*}
+                    else:
+                        add "<ttp:%{_nodes}%><cmd:mtskr route edit %{_key}%><#%{_color}%>%{_key}%" to {_list::*}
+                send formatted join {_list::*} by "<reset>&7, "
+        else if (whether arg-1 matches "config|cfg|settings?|options?") and (whether non ops does not contain sender) are true:
+            if arg-2 is "set":
+                if arg-3 is set:
+                    if arg-4 is set:
+                        if arg-3 is any of mtskr configs:
+                            set mtskr config arg-3 to arg-4
+                            play sound "entity.experience_orb.pickup"
+                        else:
+                            send error mtskr_message({_lang}, "main.cmd.config.key_false", "key", arg-3)
+                    else:
+                        send error mtskr_message({_lang}, "main.cmd.config.value_none")
+                else:
+                    send error mtskr_message({_lang}, "main.cmd.config.key_none")
+            else if arg-2 is "get":
+                if arg-3 is set:
+                    if arg-3 is any of mtskr configs:
+                        send formatted "&e%arg-3%&7: &6%mtskr config arg-3%"
+                    else:
+                        send error mtskr_message({_lang}, "main.cmd.config.key_false", "key", arg-3)
+                else:
+                    send error mtskr_message({_lang}, "main.cmd.config.key_none")
+            else if arg-2 is "reset":
+                reset mtskr config
+                send formatted mtskr_message({_lang}, "main.cmd.config.reset")
+            else if arg-2 is "list":
+                loop mtskr configs:
+                    send formatted "&e%loop-value%&7: &6%mtskr config loop-value%"
+        else if arg-1 matches "lang(uage)?|locale":
+            if sender is console:
+                set mtskr config "console_lang" to best mtskr language for arg-2
+                set {-MTskR::lang::CONSOLE} to mtskr config "console_lang"
+            else:
+                if arg-2 is set:
+                    set {-MTskR::lang::%player%} to best mtskr language for arg-2
+                    send formatted mtskr_message({-MTskR::lang::%player%}, "language_changed")
+                else:
+                    loop all loaded yaml where [input starts with "MTskR.lang."]:
+                        set {_name} to loop-value
+                        replace "MTskR.lang." in {_name} with ""
+                        add "<cmd:mtskr lang %{_name}%>&6%{_name}%<reset>" to {_locale::*}
+                    send formatted join {_locale::*} by " &7| "
+        else if (whether arg-1 is "debug") and (whether non ops does not contain sender) are true:
+            set {_key} to join (arg-2, arg-3, arg-4, arg-5, and arg-6) by "::"
+            replace " " in {_key} with "::"
+            send {-MTskR::%{_key}%}
+        else:
+            if sender is a player:
+                mtskr_showTutorial(player, arg-1, arg-2, arg-3)
+            else:
+                send join ("&e" and (sorted "help, lang, model, reload, config" split at ", ")) with " &7| &e"

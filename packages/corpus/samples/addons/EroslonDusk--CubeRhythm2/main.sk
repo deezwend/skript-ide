@@ -1,0 +1,491 @@
+import:
+	org.bukkit.Color
+
+#======================================================#
+#                                                      #
+#                      初始化                          #
+#                                                      #
+#======================================================#
+
+on load:
+	clear {actor}
+	clear all players' inventory
+	clear {playing}
+	set {spawnLocation} to location(0.5, -1.5, 0.5, world "world", 0, 0)
+	set time in world "world" to 12:00
+
+on break:
+	player's gamemode is not creative
+	cancel event
+
+on join:
+	teleport player to location(0.5, -1, 0.5, world "world", 0, 0)
+	set player's gamemode to survival
+	set player's level to 0
+	set {speed::%uuid of player%} to 1 if {speed::%uuid of player%} is not set
+	set {offset::%uuid of player%} to 0 if {offset::%uuid of player%} is not set
+	set {hitSound::%uuid of player%} to "&a开" if {hitSound::%uuid of player%} is not set
+	set {autoPlay::%uuid of player%} to "&c关" if {autoPlay::%uuid of player%} is not set
+	set {indicator::%uuid of player%} to "&c关" if {indicator::%uuid of player%} is not set
+	set {showOffset::%uuid of player%} to "&c关" if {showOffset::%uuid of player%} is not set
+	set {showLine::%uuid of player%} to "&a开" if {showLine::%uuid of player%} is not set
+	set {useEditor::%uuid of player%} to "&c关" if {useEditor::%uuid of player%} is not set
+	set time of world "world" to 12:00
+	delete all armor stands
+	reset player's walking speed
+	summon armor stand at location 1.3 blocks below player:
+		set gravity of entity to false
+		make entity invisible
+		set {_e} to entity
+	make player ride {_e}
+
+on dismount:
+	cancel event if player's gamemode is survival
+
+on resource pack request response:
+	if the resource pack was successfully loaded:
+		wait 1 second
+		set {_loc} to location(0,0,0,world "world",0,0)
+		set {_meta} to block display meta data:
+			display block data: light_blue_concrete
+			display scale: vector(0.1,0.1,0.1)
+		set {_e} to a new fake block display entity:
+			viewers: all players
+			location: {_loc}
+			meta: {_meta}
+		spawn fake entity {_e} at {_loc}
+		delayTranslation({_e}, vector(0,0,100))
+		delayKill({_e}, 20)
+		mainGUI()
+
+on server list ping:
+	set the motd to "&aCube&b Rhythm &8| &eRelease 2.0 UITest %nl%&c⚠&e 离线单机版，不支持多人游戏！"
+
+#======================================================#
+#                                                      #
+#                     操作部分                         #
+#                                                      #
+#======================================================#
+function getCursorPos(p: player) :: location:
+	set {_yaw} to yaw of {_p}
+	set {_yaw} to {_yaw} - 360 if {_yaw} > 180
+	set {_yaw} to {_yaw} + 360 if {_yaw} < -180
+	set {_face} to "w" if {_yaw} is between -45 and 45
+	set {_face} to "a" if {_yaw} is between -135 and -45
+	set {_face} to "s" if {_yaw} is between 135 and 180
+	set {_face} to "s" if {_yaw} is between -180 and -135
+	set {_face} to "d" if {_yaw} is between 45 and 135
+	set {_z} to 4 if {_face} is "w" or "a"
+	set {_z} to -3 if {_face} is "s" or "d"
+	set {_pz} to z of {_p} if {_face} is "w" or "s"
+	set {_pz} to x of {_p} if {_face} is "a" or "d"
+	set {_v} to vector in direction of {_p}
+	set {_vx} to x of {_v}
+	set {_vy} to y of {_v}
+	set {_vz} to z of {_v}
+	set {_vx} to z of {_v} if {_face} is "a"
+	set {_vz} to x of {_v} if {_face} is "a"
+	set {_vx} to -1 * x of {_v} if {_face} is "s"
+	set {_vz} to -1 * z of {_v} if {_face} is "s"
+	set {_vx} to -1 * z of {_v} if {_face} is "d"
+	set {_vz} to -1 * x of {_v} if {_face} is "d"
+	set {_rate} to ({_z} - {_pz}) / {_vz}
+	set {_vx} to ({_vx} * {_rate} + x of {_p}) if {_face} is "w" or "s"
+	set {_vx} to ({_vx} * {_rate} + z of {_p}) if {_face} is "a" or "d"
+	set {_vy} to {_vy} * -1 if {_face} is "s" or "d"
+	if {_p} is sneaking:
+		set {_vy} to ({_vy} * {_rate} + y of {_p} + 1.4)
+	else:
+		set {_vy} to ({_vy} * {_rate} + y of {_p} + 1.6)
+	set {_loc} to location({_vx}, {_vy}, {_z}, world "world", 0, 0) if {_face} is "w" or "s"
+	set {_loc} to location({_z}, {_vy}, {_vx}, world "world", 0, 0) if {_face} is "a" or "d"
+	return {_loc}
+
+function getNearestTarget(loc: location, p: player) :: objects:
+	{-loaded} is set
+	set {_playtime} to round(unix timestamp of now * 1000) - {-timer}
+	set {_face} to getFace({_p})
+	#还原成原始x y值
+	set {_x} to x of {_loc} if {_face} is "w"
+	set {_x} to -1 * z of {_loc} if {_face} is "a"
+	set {_x} to -1 * x of {_loc} + 1 if {_face} is "s"
+	set {_x} to z of {_loc} - 1 if {_face} is "d"
+	set {_y} to y of {_loc}
+	loop indices of {-onstage::*}:
+		set {_index} to loop-value
+		{-onstage::%{_index}%::type} is "tap" or "double"
+		#边长1.5的正方形判定区
+		abs({_x} - {-onstage::%{_index}%::x}) <= 1.5
+		abs({_y} - {-onstage::%{_index}%::y}) <= 1.5
+		#计算与判定时间的偏差
+		set {_distance} to {-onstage::%{_index}%::time} - {_playtime}
+		set {_filter::%{_index}%} to {_distance} if abs({_distance}) <= 200
+	#找偏差最小的项
+	{_filter::*} is set
+	set {_sorted::*} to sorted indices of {_filter::*} in ascending order
+	set {_target} to {_sorted::1}
+	#输出index与偏差
+	return {_target}, {_filter::%{_target}%}
+
+function getNearestDrag(loc: location, p: player) :: objects:
+	{-loaded} is set
+	set {_playtime} to round(unix timestamp of now * 1000) - {-timer}
+	set {_face} to getFace({_p})
+	#还原成原始x y值
+	set {_x} to x of {_loc} if {_face} is "w"
+	set {_x} to -1 * z of {_loc} if {_face} is "a"
+	set {_x} to -1 * x of {_loc} + 1 if {_face} is "s"
+	set {_x} to z of {_loc} - 1 if {_face} is "d"
+	set {_y} to y of {_loc}
+	loop indices of {-onstage::*}:
+		set {_index} to loop-value
+		{-onstage::%{_index}%::type} is "drag"
+		{-onstage::%{_index}%::hited} is not true #忽略判定过的音符
+		#边长1.5的正方形判定区
+		abs({_x} - {-onstage::%{_index}%::x}) <= 1.5
+		abs({_y} - {-onstage::%{_index}%::y}) <= 1.5
+		#计算与判定时间的偏差
+		set {_distance} to {-onstage::%{_index}%::time} - {_playtime}
+		set {_filter::%{_index}%} to {_distance} if abs({_distance}) <= 200
+	#找偏差最小的项
+	{_filter::*} is set
+	set {_sorted::*} to sorted indices of {_filter::*} in ascending order
+	set {_target} to {_sorted::1}
+	#输出index与偏差
+	return {_target}, {_filter::%{_target}%}
+
+#======================================================#
+#                                                      #
+#                   谱面播放部分                       #
+#                                                      #
+#======================================================#
+
+on load:
+	clear {-timer}
+	loop all interactions:
+		delete loop-entity
+	loop all block displays:
+		delete loop-entity
+	loop all text displays:
+		delete loop-entity
+	clear {-note::*}
+	set {combo} to 0
+	set {score} to 0
+	set {hitNotes} to 0
+	clear {statistics::*}
+	createComboDisplay()
+	
+command /speed <number>:
+	trigger:
+		set {speed::%uuid of player%} to argument
+		send title "&a流速已设置为 &f%{speed::%uuid of player%}%" with subtitle "&7Tip: &f推荐流速设置在1.0~2.5之间" to all players for 1 second with fade in 0.5 seconds and fade out 0.5 seconds
+
+command /offset <integer>:
+	trigger:
+		set {offset::%uuid of player%} to argument
+		send title "&a偏移已设置为 &f%{offset::%uuid of player%}%毫秒" with subtitle "&7Tip: &f偏移越大，音符越延后生成，反之提前生成" to all players for 1 second with fade in 0.5 seconds and fade out 0.5 seconds
+
+command /reset:
+	trigger:
+		if {editMode} is true:
+			execute player command "editor"
+		else:
+			clear {process}
+			quitGame()
+
+function quitGame():
+	music("stop")
+	remove blindness from {actor}
+	loop all fake entities:
+		kill fake entity loop-value
+	clear {actor}
+	clear {-timer}
+	clear {-beatlinesummoned::*}
+	clear {pause}
+	clear all players' inventory
+	stop all sounds for all players
+	clear {-note::*}
+	loop all interactions:
+		delete loop-entity
+	loop all block displays:
+		delete loop-entity
+	loop all text displays:
+		delete loop-entity
+	set {combo} to 0
+	set {maxNote} to 0
+	set {-noteID} to 0
+	set {score} to 0
+	set {hitNotes} to 0
+	clear {beat}
+	clear {statistics::*}
+	clear {playing}
+	set time in world "world" to 12:00
+	mainGUI()
+
+function start(p: player):
+	set {process} to 50
+	
+	teleport {_p} to location(0.5, -1, 0.5, world "world", 0, 0)
+	set {_p}'s gamemode to survival
+	set {_p}'s level to 0
+	delete all armor stands
+	reset {_p}'s walking speed
+	summon armor stand at location 1.3 blocks below {_p}:
+		set gravity of entity to false
+		make entity invisible
+		set {_as} to entity
+	make {_p} ride {_as}
+	
+	send title "&f%{song}%" with subtitle "&8曲: &7%{artist}% &8· 谱: &7%{author}%" to {actor} for 1 second with fade in 0.5 seconds and fade out 0.5 seconds
+	loop all text displays:
+		if metadata value "combo" of loop-entity is set:
+			set text of loop-entity to "§f"
+		if metadata value "score" of loop-entity is set:
+			set text of loop-entity to "§8"
+		if metadata value "soundinfo" of loop-entity is set:
+			set text of loop-entity to "§8"
+	clear {process}
+	set {actor} to {_p}
+	set {_preload} to preload({path})
+	if {_preload} is not "加载完毕":
+		send "&c音频加载失败: %{_preload}%" to {_p}
+		clear {process}
+		quitGame()
+	{_preload} is "加载完毕"
+	wait 2 seconds
+	stop all sounds for all players
+	set slot (integers from 0 to 8) of {actor} to snowball named "&f"
+	set {-timer} to round(unix timestamp of now * 1000) #记录游戏开始时间，提前3秒以提供时间让音符下落
+	set {combo} to 0
+	set {score} to 0
+	set {beat} to -8
+	set {hitNotes} to 0
+	set {alphaTime} to 11
+	set {statistics::exact} to 0
+	set {statistics::just} to 0
+	set {statistics::miss} to 0
+	set {statistics::exactHold} to 0
+	wait 3 seconds
+	music("startatposition", 0)
+
+on shoot:
+	cancel event if shooter is player
+
+#======================================================#
+#                                                      #
+#                   场景布置部分                       #
+#                                                      #
+#======================================================#
+
+every ticks:
+	{-timer} is set
+	if {alphaTime} > 0:
+		remove 1 from {alphaTime}
+		set {scoreEntityAlpha} to -127 + {alphaTime} * 12.6
+	if {indicator::%uuid of {actor}%} is "&a开":
+		if {statistics::miss} = 0:
+			if {statistics::just} = 0:
+				set {_color} to "§e"
+			else:
+				set {_color} to "§b"
+		else:
+			set {_color} to "§f"
+	else:
+		set {_color} to "§f"
+	loop all text displays:
+		if metadata value "combo" of loop-entity is set:
+			if {combo} >= 3:
+				set text of loop-entity to "%{_color}%%{combo}%"
+			else:
+				set text of loop-entity to "§f"
+		if metadata value "score" of loop-entity is set:
+			if {score} >= 1000000:
+				set text of loop-entity to "%{_color}%%{score} + {statistics::exactHold}%"
+			else if {score} >= 100000:
+				set text of loop-entity to "§80%{_color}%%{score} + {statistics::exactHold}%"
+			else if {score} >= 10000:
+				set text of loop-entity to "§800%{_color}%%{score} + {statistics::exactHold}%"
+			else if {score} >= 1000:
+				set text of loop-entity to "§8000%{_color}%%{score} + {statistics::exactHold}%"
+			else if {score} >= 100:
+				set text of loop-entity to "§80000%{_color}%%{score} + {statistics::exactHold}%"
+			else if {score} >= 10:
+				set text of loop-entity to "§800000%{_color}%%{score} + {statistics::exactHold}%"
+			else:
+				set text of loop-entity to "§8000000%{_color}%%{score} + {statistics::exactHold}%"
+			set opacity of loop-entity to {scoreEntityAlpha}
+		if metadata value "level" of loop-entity is set:
+			if {level} is set:
+				set text of loop-entity to "§f%{level}%"
+			else:
+				set text of loop-entity to "§f"
+		if metadata value "soundinfo" of loop-entity is set:
+			if {autoPlay::%uuid of {actor}%} is "&a开":
+				set text of loop-entity to "§a(AutoPlay) §f%{song}%§r§f   Player: Computer"
+			else:
+				set text of loop-entity to "§f%{song}%§r§f   Player: %name of {actor}%"
+
+function createComboDisplay():
+	delete all text displays
+	clear {-border::*}
+	summon text display at location(0, 0, 5, world "world", 180, 0):
+		set display translation of entity to vector(-0.63,0.02,0)
+		set text of the entity to "§f"
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set display scale of entity to vector(9.5,9.5,0)
+		set metadata value "border" of the entity to "w"
+		set sky light override of the entity to 0
+		set block light override of the entity to 15
+		set {-border::w} to entity
+	summon text display at location(5, 0, 0, world "world", 90, 0):
+		set display translation of entity to vector(0.35,0.02,0)
+		set text of the entity to "§f"
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set display scale of entity to vector(9.5,9.5,0)
+		set metadata value "border" of the entity to "a"
+		set sky light override of the entity to 0
+		set block light override of the entity to 15
+		set {-border::a} to entity
+	summon text display at location(0, 0, -4, world "world", 0, 0):
+		set display translation of entity to vector(0.35,0.02,0)
+		set text of the entity to "§f"
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set display scale of entity to vector(9.5,9.5,0)
+		set metadata value "border" of the entity to "s"
+		set sky light override of the entity to 0
+		set block light override of the entity to 15
+		set {-border::s} to entity
+	summon text display at location(-4, 0, 0, world "world", -90, 0):
+		set display translation of entity to vector(-0.63,0.02,0)
+		set text of the entity to "§f"
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set display scale of entity to vector(9.5,9.5,0)
+		set metadata value "border" of the entity to "d"
+		set sky light override of the entity to 0
+		set block light override of the entity to 15
+		set {-border::d} to entity
+	set {_loc1} to location(0.5, -8, 50, world "world", 180, 0)
+	set {_loc2} to location(50, -8, 0.5, world "world", 90, 0)
+	set {_loc3} to location(0.5, -8, -49, world "world", 0, 0)
+	set {_loc4} to location(-49, -8, 0.5, world "world", -90, 0) 
+	summon text display at {_loc1}:
+		set text of the entity to "§f"
+		set display scale of entity to vector(50,50,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "combo" of the entity to true
+		
+		set sky light override of the entity to 2
+		set block light override of the entity to 0
+	summon text display at {_loc2}:
+		set text of the entity to "§f"
+		set display scale of entity to vector(50,50,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "combo" of the entity to true
+		
+		set sky light override of the entity to 2
+		set block light override of the entity to 0
+	summon text display at {_loc3}:
+		set text of the entity to "§f"
+		set display scale of entity to vector(50,50,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "combo" of the entity to true
+		
+		set sky light override of the entity to 2
+		set block light override of the entity to 0
+	summon text display at {_loc4}:
+		set text of the entity to "§f"
+		set display scale of entity to vector(50,50,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "combo" of the entity to true
+		
+		set sky light override of the entity to 2
+		set block light override of the entity to 0
+	set {_loc5} to location(2.5, 3.2, 5, world "world", 180, 0)
+	set {_loc6} to location(5, 3.2, -1.5, world "world", 90, 0)
+	set {_loc7} to location(-1.5, 3.2, -4, world "world", 0, 0)
+	set {_loc8} to location(-4, 3.2, 2.5, world "world", -90, 0)
+	summon text display at {_loc5}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "&f"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "score" of the entity to true
+		set opacity of the entity to 127
+	summon text display at {_loc6}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "§8"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "score" of the entity to true
+		set opacity of the entity to 127
+	summon text display at {_loc7}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "§8"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "score" of the entity to true
+		set opacity of the entity to 127
+	summon text display at {_loc8}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "§8"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "score" of the entity to true
+		set opacity of the entity to 127
+	set {_loc9} to location(-1.5, 3.2, 5, world "world", 180, 0)
+	set {_loca} to location(5, 3.2, 2.5, world "world", 90, 0)
+	set {_locb} to location(2.5, 3.2, -4, world "world", 0, 0)
+	set {_locc} to location(-4, 3.2, -1.5, world "world", -90, 0)
+	summon text display at {_loc9}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "§8"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "level" of the entity to true
+	summon text display at {_loca}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "§8"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "level" of the entity to true
+	summon text display at {_locb}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "§8"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "level" of the entity to true
+	summon text display at {_locc}:
+		set text alignment of the entity to left aligned
+		set text of the entity to "§8"
+		set display scale of entity to vector(2,2,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "level" of the entity to true
+	set {_locd} to location(0.5, -2.8, 5, world "world", 180, 0)
+	set {_loce} to location(5, -2.8, 0.5, world "world", 90, 0)
+	set {_locf} to location(0.5, -2.8, -4, world "world", 0, 0)
+	set {_locg} to location(-4, -2.8, 0.5, world "world", -90, 0)
+
+	summon text display at {_locd}:
+		set the line width of the entity to 400
+		set text of the entity to "§8"
+		set display scale of entity to vector(0.8,0.8,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "soundinfo" of the entity to true
+	summon text display at {_loce}:
+		set the line width of the entity to 400
+		set text of the entity to "§8"
+		set display scale of entity to vector(0.8,0.8,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "soundinfo" of the entity to true
+	summon text display at {_locf}:
+		set the line width of the entity to 400
+		set text of the entity to "§8"
+		set display scale of entity to vector(0.8,0.8,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "soundinfo" of the entity to true
+	summon text display at {_locg}:
+		set the line width of the entity to 400
+		set text of the entity to "§8"
+		set display scale of entity to vector(0.8,0.8,0)
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set metadata value "soundinfo" of the entity to true

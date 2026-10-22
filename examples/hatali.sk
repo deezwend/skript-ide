@@ -1,0 +1,17 @@
+# Faz 2 doğrulama örneği: bu dosyada bilerek hatalar var.
+# Kaydet ya da F5 ile doğrula; hatalar Problemler sekmesinde ve editörde görünmeli.
+
+on join:
+	send "Hoş geldin, %player%!" to player
+	# Satır 7: "send" yanlış yazıldı -> hata
+	sned "Bu satır hatalı" to player
+
+function topla(a: number, b: number) :: number:
+	# Satır 11: eksik ifade -> hata
+	return {_a} +
+
+command /bekle:
+	trigger:
+		# Satır 16: 0 tick bekleme -> uyarı
+		wait 0 ticks
+		send "Tamam" to player

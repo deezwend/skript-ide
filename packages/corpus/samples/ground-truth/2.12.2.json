@@ -1,0 +1,1313 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-22T08:53:16.751Z",
+  "skriptVersion": "2.12.2",
+  "runtime": {
+    "minecraft": "1.21.8",
+    "paperBuild": 60,
+    "javaMajor": 21,
+    "javaPath": "C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot/bin/java.exe",
+    "javaVersion": "openjdk version \"21.0.12.1\" 2026-08-18 LTS"
+  },
+  "methodology": {
+    "loading": "Her dosya ayrı ayrı `sk reload ide/<dosya>` ile yüklenir.",
+    "isolation": "Bir sonraki dosyaya geçmeden önce `sk disable` ile betik kaldırılır; böylece fonksiyon/komut çakışması olmaz.",
+    "serverRoot": "C:\\Users\\remix\\AppData\\Local\\Temp\\skript-corpus-server",
+    "eula": "EULA onayı yalnızca geçici test kök klasöründe programatik olarak verilir.",
+    "diagnostics": "Skript konsolundaki Line N: (dosya) blokları; hata/uyarı ayrımı başlık renginden."
+  },
+  "totals": {
+    "files": 52,
+    "cleanFiles": 24,
+    "filesWithErrors": 28,
+    "failedFiles": 0,
+    "errors": 136,
+    "warnings": 4
+  },
+  "files": [
+    {
+      "path": "vanilla/BuggyAl--SkriptLibrary/General/functions.sk",
+      "stagedName": "gt_001_functions.sk",
+      "lines": 14,
+      "ok": true,
+      "durationMs": 163,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/BuggyAl--SkriptLibrary/Staff Tools/vanish.sk",
+      "stagedName": "gt_002_vanish.sk",
+      "lines": 59,
+      "ok": true,
+      "durationMs": 184,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/-easter.sk",
+      "stagedName": "gt_003_-easter.sk",
+      "lines": 36,
+      "ok": true,
+      "durationMs": 66,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/-fools2016.sk",
+      "stagedName": "gt_004_-fools2016.sk",
+      "lines": 171,
+      "ok": false,
+      "durationMs": 783,
+      "diagnostics": [
+        {
+          "line": 84,
+          "severity": "error",
+          "message": "Can't compare a block with 'ore'",
+          "code": "block is ore"
+        },
+        {
+          "line": 95,
+          "severity": "error",
+          "message": "Can't understand this expression: 'a bonemeal named \"&7&oUseless debris\"'",
+          "code": "set {_gift} to a bonemeal named \"&7&oUseless debris\""
+        },
+        {
+          "line": 104,
+          "severity": "error",
+          "message": "Can't compare a block with 'log'",
+          "code": "block is log"
+        },
+        {
+          "line": 105,
+          "severity": "error",
+          "message": "Can't understand this condition/effect: is raining or thundering in player's world",
+          "code": "is raining or thundering in player's world"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/-template.sk",
+      "stagedName": "gt_005_-template.sk",
+      "lines": 50,
+      "ok": false,
+      "durationMs": 22,
+      "diagnostics": [
+        {
+          "line": 30,
+          "severity": "error",
+          "message": "function templateFunction (simple event) doesn't return any value. Please use 'stop' or 'exit' if you want to stop the trigger.",
+          "code": "return value"
+        },
+        {
+          "line": 34,
+          "severity": "error",
+          "message": "Can't understand this structure: on event",
+          "code": "on event:"
+        },
+        {
+          "line": 34,
+          "severity": "warning",
+          "message": "Empty configuration section! You might want to indent one or more of the subsequent lines to make them belong to this section or remove the colon at the end of the line if you don't want this line to start a section.",
+          "code": "on event:"
+        },
+        {
+          "line": 41,
+          "severity": "error",
+          "message": "Unknown type 'arg 1'",
+          "code": "command /commandname <arg 1> [<optional arg 2=default value>]:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/!utilities.sk",
+      "stagedName": "gt_006__utilities.sk",
+      "lines": 27,
+      "ok": true,
+      "durationMs": 21,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/approval.sk",
+      "stagedName": "gt_007_approval.sk",
+      "lines": 329,
+      "ok": false,
+      "durationMs": 233,
+      "diagnostics": [
+        {
+          "line": 98,
+          "severity": "error",
+          "message": "Can't understand this structure: on right click on anything",
+          "code": "on right click on anything:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/blacklist.sk",
+      "stagedName": "gt_008_blacklist.sk",
+      "lines": 44,
+      "ok": false,
+      "durationMs": 154,
+      "diagnostics": [
+        {
+          "line": 27,
+          "severity": "error",
+          "message": "Can't compare an entity with 'tnt minecart'",
+          "code": "if clicked entity is tnt minecart:"
+        },
+        {
+          "line": 29,
+          "severity": "error",
+          "message": "Can't understand this effect: else",
+          "code": "else if clicked block is tnt:"
+        },
+        {
+          "line": 34,
+          "severity": "error",
+          "message": "There are multiple command senders in an on click event. You must define which command sender to use.",
+          "code": "message \"&c*** Sorry, you can't prime TNT in creative worlds!\""
+        },
+        {
+          "line": 38,
+          "severity": "error",
+          "message": "Can't understand this condition/effect: shooter's held item is lingering_pot or splash_pot",
+          "code": "shooter's held item is lingering_pot or splash_pot"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/buildathon/plotgen.sk",
+      "stagedName": "gt_009_plotgen.sk",
+      "lines": 151,
+      "ok": false,
+      "durationMs": 314,
+      "diagnostics": [
+        {
+          "line": 27,
+          "severity": "error",
+          "message": "\"world_buildathon\" is not a location",
+          "code": "set {_loc1} to location ({@min x} + {_row}, 0, {@min z}) \"{@world}\""
+        },
+        {
+          "line": 28,
+          "severity": "error",
+          "message": "\"world_buildathon\" is not a location",
+          "code": "set {_loc2} to location ({@min x} + {_row}, 0, {@max z}) \"{@world}\""
+        },
+        {
+          "line": 36,
+          "severity": "error",
+          "message": "a block can't be set to 'grass' because the latter is neither an item type nor a block data",
+          "code": "set blocks between block at {_loc1} and block at {_loc2} to grass"
+        },
+        {
+          "line": 50,
+          "severity": "error",
+          "message": "\"world_buildathon\" is not a location",
+          "code": "set {_loc1} to location ({_originX}, {@height}, {_originZ} + {_i}) \"{@world}\""
+        },
+        {
+          "line": 51,
+          "severity": "error",
+          "message": "\"world_buildathon\" is not a location",
+          "code": "set {_loc2} to location ({_originX}, {@height}, {_originZ} + {_i}) \"{@world}\""
+        },
+        {
+          "line": 79,
+          "severity": "error",
+          "message": "a block can't be set to 'grass' because the latter is neither an item type nor a block data",
+          "code": "set blocks between block at {_loc1} and block at {_loc2} to grass"
+        },
+        {
+          "line": 89,
+          "severity": "error",
+          "message": "\"world_buildathon\" is not a location",
+          "code": "set block at location ({_originX} + 2, {@height}, {_originZ} + 2) \"{@world}\" to redstone block"
+        },
+        {
+          "line": 90,
+          "severity": "error",
+          "message": "\"world_buildathon\" is not a location",
+          "code": "set block at location ({_originX} + 2, {@height} + 1, {_originZ} + 2) \"{@world}\" to sign post:6"
+        },
+        {
+          "line": 98,
+          "severity": "error",
+          "message": "Unexpected entry 'permission:    gamealition.buildathon.host'. Check that it's spelled correctly, and ensure that you have put all code into a trigger.",
+          "code": "permission:    gamealition.buildathon.host"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/carry.sk",
+      "stagedName": "gt_010_carry.sk",
+      "lines": 172,
+      "ok": false,
+      "durationMs": 60,
+      "diagnostics": [
+        {
+          "line": 109,
+          "severity": "error",
+          "message": "{_passenger} can only be set to one class java.lang.Object, not more",
+          "code": "set {_passenger} to player's passenger"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/censor.sk",
+      "stagedName": "gt_011_censor.sk",
+      "lines": 20,
+      "ok": true,
+      "durationMs": 63,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/commands.sk",
+      "stagedName": "gt_012_commands.sk",
+      "lines": 390,
+      "ok": false,
+      "durationMs": 251,
+      "diagnostics": [
+        {
+          "line": 167,
+          "severity": "error",
+          "message": "Can't compare a player with 'holding anything'",
+          "code": "player is holding anything"
+        },
+        {
+          "line": 176,
+          "severity": "error",
+          "message": "Can't compare a player with 'holding anything'",
+          "code": "player is holding anything"
+        },
+        {
+          "line": 177,
+          "severity": "error",
+          "message": "Can't understand this condition/effect: set data value of player's held item to arg 1",
+          "code": "set data value of player's held item to arg 1"
+        },
+        {
+          "line": 211,
+          "severity": "error",
+          "message": "Can't compare a player with 'holding anything'",
+          "code": "player is holding anything"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/death.sk",
+      "stagedName": "gt_013_death.sk",
+      "lines": 45,
+      "ok": false,
+      "durationMs": 34,
+      "diagnostics": [
+        {
+          "line": 17,
+          "severity": "error",
+          "message": "Use 'attacker' and/or 'victim' in damage/death events",
+          "code": "set {deaths::%uuid of player%.location} to player's location"
+        },
+        {
+          "line": 18,
+          "severity": "error",
+          "message": "Use 'attacker' and/or 'victim' in damage/death events",
+          "code": "set {deaths::%uuid of player%.cause}    to death message"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/derpi/commands.sk",
+      "stagedName": "gt_014_commands.sk",
+      "lines": 187,
+      "ok": false,
+      "durationMs": 105,
+      "diagnostics": [
+        {
+          "line": 67,
+          "severity": "error",
+          "message": "Can't understand this expression: {_target}'s money",
+          "code": "add \"↳ &cCommited &7by &f%command sender% &7on &f%now%&7, with money set from &f%{_target}'s money% &7to &f%{_offsetMoney}% &7because &f%{_reason}%\" to {derpi.%{_targetUUID}%.log::*}"
+        },
+        {
+          "line": 73,
+          "severity": "error",
+          "message": "Can't understand this condition/effect: set {_target}'s money to {_offsetMoney}",
+          "code": "set {_target}'s money to {_offsetMoney}"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/derpi/events.sk",
+      "stagedName": "gt_015_events.sk",
+      "lines": 123,
+      "ok": false,
+      "durationMs": 91,
+      "diagnostics": [
+        {
+          "line": 7,
+          "severity": "error",
+          "message": "Can't understand this structure: on rightclick on a sign",
+          "code": "on rightclick on a sign:"
+        },
+        {
+          "line": 77,
+          "severity": "error",
+          "message": "Can't understand this expression: player's money",
+          "code": "console command \"/broadcast-irc &l*** &f%player% &7is in the &c&lDERPI&7! Their balance is: &f%player's money%\""
+        },
+        {
+          "line": 88,
+          "severity": "error",
+          "message": "'arguments' can only be a single text, not more.",
+          "code": "set {_s::*} to arguments split at \" \""
+        },
+        {
+          "line": 121,
+          "severity": "error",
+          "message": "Use 'attacker' and/or 'victim' in damage/death events",
+          "code": "{derpi.%player's uuid%.quarried} is set"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/events.sk",
+      "stagedName": "gt_016_events.sk",
+      "lines": 161,
+      "ok": false,
+      "durationMs": 164,
+      "diagnostics": [
+        {
+          "line": 50,
+          "severity": "error",
+          "message": "Can't understand this structure: on rightclick on a mob spawner",
+          "code": "on rightclick on a mob spawner:"
+        },
+        {
+          "line": 81,
+          "severity": "error",
+          "message": "Can't understand this structure: on right click on bed",
+          "code": "on right click on bed:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/flatland.sk",
+      "stagedName": "gt_017_flatland.sk",
+      "lines": 95,
+      "ok": false,
+      "durationMs": 106,
+      "diagnostics": [
+        {
+          "line": 7,
+          "severity": "error",
+          "message": "\"world_creative\" is neither an entity, a chunk, a world, a worldborder nor a block",
+          "code": "player is in \"world_creative\" or \"world_chaos\" or \"world_buildathon\""
+        },
+        {
+          "line": 13,
+          "severity": "error",
+          "message": "\"world_creative\" is neither an entity, a chunk, a world, a worldborder nor a block",
+          "code": "player is in \"world_creative\" or \"world_chaos\" or \"world_buildathon\""
+        },
+        {
+          "line": 19,
+          "severity": "error",
+          "message": "\"world_creative\" is neither an entity, a chunk, a world, a worldborder nor a block",
+          "code": "player is in \"world_creative\" or \"world_chaos\" or \"world_buildathon\""
+        },
+        {
+          "line": 24,
+          "severity": "error",
+          "message": "Can't understand this structure: on right click on anything",
+          "code": "on right click on anything:"
+        },
+        {
+          "line": 32,
+          "severity": "error",
+          "message": "\"world_creative\" is neither an entity, a chunk, a world, a worldborder nor a block",
+          "code": "attacker is in \"world_creative\" or \"world_chaos\" or \"world_buildathon\""
+        },
+        {
+          "line": 38,
+          "severity": "error",
+          "message": "\"world_creative\" is neither an entity, a chunk, a world, a worldborder nor a block",
+          "code": "player is in \"world_creative\" or \"world_chaos\" or \"world_buildathon\""
+        },
+        {
+          "line": 44,
+          "severity": "error",
+          "message": "\"world_creative\" is neither an entity, a chunk, a world, a worldborder nor a block",
+          "code": "player is in \"world_creative\" or \"world_chaos\" or \"world_buildathon\""
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/moderator.sk",
+      "stagedName": "gt_018_moderator.sk",
+      "lines": 30,
+      "ok": true,
+      "durationMs": 47,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/pigmen.sk",
+      "stagedName": "gt_019_pigmen.sk",
+      "lines": 19,
+      "ok": true,
+      "durationMs": 63,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/ping.sk",
+      "stagedName": "gt_020_ping.sk",
+      "lines": 30,
+      "ok": true,
+      "durationMs": 55,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/portal.sk",
+      "stagedName": "gt_021_portal.sk",
+      "lines": 22,
+      "ok": false,
+      "durationMs": 95,
+      "diagnostics": [
+        {
+          "line": 12,
+          "severity": "error",
+          "message": "There's no location in a command event",
+          "code": "if world is \"world_nether\" or \"resource_nether\":"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/pvp.sk",
+      "stagedName": "gt_022_pvp.sk",
+      "lines": 126,
+      "ok": true,
+      "durationMs": 90,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/resource.sk",
+      "stagedName": "gt_023_resource.sk",
+      "lines": 186,
+      "ok": false,
+      "durationMs": 137,
+      "diagnostics": [
+        {
+          "line": 68,
+          "severity": "error",
+          "message": "\"resource\" is not a location",
+          "code": "set {_origin}       to location at (0, 64, 0) \"resource\""
+        },
+        {
+          "line": 69,
+          "severity": "error",
+          "message": "\"resource\" is not a location",
+          "code": "set {_origin2}      to location at (0, 70, 0) \"resource\""
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/reuben.sk",
+      "stagedName": "gt_024_reuben.sk",
+      "lines": 248,
+      "ok": false,
+      "durationMs": 289,
+      "diagnostics": [
+        {
+          "line": 171,
+          "severity": "error",
+          "message": "Can't understand this condition: 'is thundering in pig's world'",
+          "code": "if is thundering in pig's world:"
+        },
+        {
+          "line": 177,
+          "severity": "error",
+          "message": "Can't compare a player with 'wearing leather armour'",
+          "code": "if player is wearing leather armour:"
+        },
+        {
+          "line": 187,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is any porkchop'",
+          "code": "if {_hold} is any porkchop:"
+        },
+        {
+          "line": 189,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is any beef or any chicken or any mutton or any rabbit meat'",
+          "code": "if {_hold} is any beef or any chicken or any mutton or any rabbit meat:"
+        },
+        {
+          "line": 192,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is any fish or any pufferfish or any clownfish or any salmon'",
+          "code": "if {_hold} is any fish or any pufferfish or any clownfish or any salmon:"
+        },
+        {
+          "line": 195,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is any potato or any carrot or any apple or bread or cookie'",
+          "code": "if {_hold} is any potato or any carrot or any apple or bread or cookie:"
+        },
+        {
+          "line": 201,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is any carrot'",
+          "code": "if {_hold} is any carrot:"
+        },
+        {
+          "line": 207,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is any apple'",
+          "code": "if {_hold} is any apple:"
+        },
+        {
+          "line": 213,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is sword or axe'",
+          "code": "if {_hold} is sword or axe:"
+        },
+        {
+          "line": 216,
+          "severity": "error",
+          "message": "Can't understand this condition: '{_hold} is flint'n'steel or blaze rod or blaze powder or lava bucket'",
+          "code": "if {_hold} is flint'n'steel or blaze rod or blaze powder or lava bucket:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/sign.sk",
+      "stagedName": "gt_025_sign.sk",
+      "lines": 98,
+      "ok": false,
+      "durationMs": 65,
+      "diagnostics": [
+        {
+          "line": 29,
+          "severity": "error",
+          "message": "Can't understand this structure: on right click on sign",
+          "code": "on right click on sign:"
+        },
+        {
+          "line": 43,
+          "severity": "error",
+          "message": "Can't understand this structure: on left click on sign",
+          "code": "on left click on sign:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/silence.sk",
+      "stagedName": "gt_026_silence.sk",
+      "lines": 46,
+      "ok": true,
+      "durationMs": 60,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/sleep.sk",
+      "stagedName": "gt_027_sleep.sk",
+      "lines": 54,
+      "ok": true,
+      "durationMs": 71,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/wash.sk",
+      "stagedName": "gt_028_wash.sk",
+      "lines": 65,
+      "ok": false,
+      "durationMs": 55,
+      "diagnostics": [
+        {
+          "line": 13,
+          "severity": "error",
+          "message": "Can't understand this structure: on rightclick on a sign",
+          "code": "on rightclick on a sign:"
+        },
+        {
+          "line": 40,
+          "severity": "error",
+          "message": "Can't understand this structure: on rightclick on a sign",
+          "code": "on rightclick on a sign:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/wither/commands.sk",
+      "stagedName": "gt_029_commands.sk",
+      "lines": 35,
+      "ok": true,
+      "durationMs": 57,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Gamealition--Survival-Skripts/wither/events.sk",
+      "stagedName": "gt_030_events.sk",
+      "lines": 72,
+      "ok": false,
+      "durationMs": 54,
+      "diagnostics": [
+        {
+          "line": 15,
+          "severity": "error",
+          "message": "Can't understand this structure: on rightclick on a sign",
+          "code": "on rightclick on a sign:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Lafcadia--PlainEssence/main.sk",
+      "stagedName": "gt_031_main.sk",
+      "lines": 48,
+      "ok": false,
+      "durationMs": 170,
+      "diagnostics": [
+        {
+          "line": 6,
+          "severity": "error",
+          "message": "Functions cannot be used here (or there is a problem with your arguments).",
+          "code": "if offlineplayer(arg-1) is not online:"
+        },
+        {
+          "line": 9,
+          "severity": "error",
+          "message": "Functions cannot be used here (or there is a problem with your arguments).",
+          "code": "set {_p} to offlineplayer(arg-1)"
+        },
+        {
+          "line": 26,
+          "severity": "error",
+          "message": "Functions cannot be used here (or there is a problem with your arguments).",
+          "code": "if offlineplayer(arg-1) is not online:"
+        },
+        {
+          "line": 29,
+          "severity": "error",
+          "message": "Can't understand this condition: 'offlineplayer(arg-1) has 0 empty slots'",
+          "code": "if offlineplayer(arg-1) has 0 empty slots:"
+        },
+        {
+          "line": 32,
+          "severity": "error",
+          "message": "Functions cannot be used here (or there is a problem with your arguments).",
+          "code": "set {_p} to offlineplayer(arg-1)"
+        },
+        {
+          "line": 34,
+          "severity": "error",
+          "message": "Can't understand this condition/effect: remove player's tool",
+          "code": "remove player's tool"
+        },
+        {
+          "line": 36,
+          "severity": "error",
+          "message": "Can't understand this condition/effect: send to {_p} \"收到物品! You have received an item from %player%.\"",
+          "code": "send to {_p} \"收到物品! You have received an item from %player%.\""
+        },
+        {
+          "line": 42,
+          "severity": "error",
+          "message": "Functions cannot be used here (or there is a problem with your arguments).",
+          "code": "if offlineplayer(arg-1) is not online:"
+        },
+        {
+          "line": 45,
+          "severity": "error",
+          "message": "Functions cannot be used here (or there is a problem with your arguments).",
+          "code": "set {_p} to offlineplayer(arg-1)"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/mapletav--Tusher/.sk/TPA/Tusher-TPA_v1.0.0_zh-cn.sk",
+      "stagedName": "gt_032_Tusher-TPA_v1.0.0_zh-cn.sk",
+      "lines": 223,
+      "ok": true,
+      "durationMs": 102,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/auto_pickup.sk",
+      "stagedName": "gt_033_auto_pickup.sk",
+      "lines": 11,
+      "ok": true,
+      "durationMs": 56,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/basic_scoreboard.sk",
+      "stagedName": "gt_034_basic_scoreboard.sk",
+      "lines": 14,
+      "ok": false,
+      "durationMs": 306,
+      "diagnostics": [
+        {
+          "line": 3,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set title of loop-player's scoreboard to \"  &4&lAltering &c&lSMP  \""
+        },
+        {
+          "line": 4,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 10 of loop-player's scoreboard to \" \""
+        },
+        {
+          "line": 5,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 9 of loop-player's scoreboard to \"&fPlayer: %loop-player%\""
+        },
+        {
+          "line": 6,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 8 of loop-player's scoreboard to \"&fRank: \""
+        },
+        {
+          "line": 7,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 7 of loop-player's scoreboard to \"&c---------------------\""
+        },
+        {
+          "line": 8,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 6 of loop-player's scoreboard to \"&6Money: &e%{Money::%uuid of loop-player%}%\""
+        },
+        {
+          "line": 9,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 5 of loop-player's scoreboard to \"&6Level: &e%{Level::%uuid of loop-player%}%\""
+        },
+        {
+          "line": 10,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 4 of loop-player's scoreboard to \"&6XP: &e%{XP::%uuid of loop-player%}%&8/&e%{XPReq::%uuid of loop-player%}%\""
+        },
+        {
+          "line": 11,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 3 of loop-player's scoreboard to \"&6Bounty: &e$%{Bounty::%uuid of loop-player%}%\""
+        },
+        {
+          "line": 12,
+          "severity": "error",
+          "message": "There's no loop that matches 'loop-player's scoreboard'",
+          "code": "set line 2 of loop-player's scoreboard to \"&cKills: %{Kills::%uuid of loop-player%}%\""
+        },
+        {
+          "line": 13,
+          "severity": "error",
+          "message": "Invalid use of quotes (\"). If you want to use quotes in \"quoted text\", double them: \"\".",
+          "code": "set line 1 of loop-player's scoreboard to \"&4Deaths: %{Deaths::%uuid of loop-player%}%"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/borken_dungeons.sk",
+      "stagedName": "gt_035_borken_dungeons.sk",
+      "lines": 36,
+      "ok": false,
+      "durationMs": 24,
+      "diagnostics": [
+        {
+          "line": 17,
+          "severity": "error",
+          "message": "Can't understand this expression: '{_player}'s head named \"Sweltering Swamp Easy\" with lore \"%{_player}%'s Party\"'",
+          "code": "set {_item} to {_player}'s head named \"Sweltering Swamp Easy\" with lore \"%{_player}%'s Party\""
+        }
+      ]
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/generate_tree_command.sk",
+      "stagedName": "gt_036_generate_tree_command.sk",
+      "lines": 4,
+      "ok": true,
+      "durationMs": 59,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/keyall_command.sk",
+      "stagedName": "gt_037_keyall_command.sk",
+      "lines": 36,
+      "ok": false,
+      "durationMs": 124,
+      "diagnostics": [
+        {
+          "line": 5,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 8,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 11,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 14,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 17,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 20,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 23,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 26,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 29,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        },
+        {
+          "line": 32,
+          "severity": "error",
+          "message": "indentation error: expected 8 spaces, but found 2 tabs",
+          "code": "play sound \"entity.experience_orb.pickup\" with volume 0.5 to the player"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/player_freezing.sk",
+      "stagedName": "gt_038_player_freezing.sk",
+      "lines": 29,
+      "ok": true,
+      "durationMs": 39,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/slash_fly_command.sk",
+      "stagedName": "gt_039_slash_fly_command.sk",
+      "lines": 25,
+      "ok": false,
+      "durationMs": 94,
+      "diagnostics": [
+        {
+          "line": 18,
+          "severity": "error",
+          "message": "Can't compare a text with a boolean (yes/no)",
+          "code": "if \"{@allowed-flying}\" is true:# Check if flying is allowed globally"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/static_word_filter.sk",
+      "stagedName": "gt_040_static_word_filter.sk",
+      "lines": 5,
+      "ok": true,
+      "durationMs": 60,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/vanish_join_message.sk",
+      "stagedName": "gt_041_vanish_join_message.sk",
+      "lines": 11,
+      "ok": false,
+      "durationMs": 81,
+      "diagnostics": [
+        {
+          "line": 2,
+          "severity": "error",
+          "message": "Can't understand this condition: '{VanishBool::%uuid of player%} is ture'",
+          "code": "if {VanishBool::%uuid of player%} is ture:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Plutoren--SnapMc/quests.sk",
+      "stagedName": "gt_042_quests.sk",
+      "lines": 1676,
+      "ok": false,
+      "durationMs": 3434,
+      "diagnostics": [
+        {
+          "line": 186,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of oak wood log in arg-1's inventory"
+        },
+        {
+          "line": 205,
+          "severity": "error",
+          "message": "'{_amount} of oak wood log' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of oak wood log from arg-1's inventory"
+        },
+        {
+          "line": 265,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of lapis in arg-1's inventory"
+        },
+        {
+          "line": 286,
+          "severity": "error",
+          "message": "'{_amount} of lapis' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of lapis from arg-1's inventory"
+        },
+        {
+          "line": 548,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of stone brick in arg-1's inventory"
+        },
+        {
+          "line": 565,
+          "severity": "error",
+          "message": "'{_amount} of stone brick' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of stone brick from arg-1's inventory"
+        },
+        {
+          "line": 661,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of wool in arg-1's inventory"
+        },
+        {
+          "line": 678,
+          "severity": "error",
+          "message": "'{_amount} of wool' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of wool from arg-1's inventory"
+        },
+        {
+          "line": 735,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of stone brick stair in arg-1's inventory"
+        },
+        {
+          "line": 752,
+          "severity": "error",
+          "message": "'{_amount} of stone brick stair' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of stone brick stair from arg-1's inventory"
+        },
+        {
+          "line": 772,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of oak plank in arg-1's inventory"
+        },
+        {
+          "line": 789,
+          "severity": "error",
+          "message": "'{_amount} of oak plank' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of oak plank from arg-1's inventory"
+        },
+        {
+          "line": 1084,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of wall sign in arg-1's inventory"
+        },
+        {
+          "line": 1099,
+          "severity": "error",
+          "message": "'{_amount} of wall sign' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of wall sign from arg-1's inventory"
+        },
+        {
+          "line": 1216,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of wool in arg-1's inventory"
+        },
+        {
+          "line": 1231,
+          "severity": "error",
+          "message": "'{_amount} of wool' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of wool from arg-1's inventory"
+        },
+        {
+          "line": 1283,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of bed in arg-1's inventory"
+        },
+        {
+          "line": 1298,
+          "severity": "error",
+          "message": "'{_amount} of bed' can't be removed from an inventory because the former is neither an item type nor an inventory",
+          "code": "remove {_amount} of bed from arg-1's inventory"
+        },
+        {
+          "line": 1382,
+          "severity": "error",
+          "message": "This command has multiple arguments, meaning it is not possible to get the 'argument'. Use 'argument 1', 'argument 2', etc. instead",
+          "code": "set {_has} to amount of block of coal in arg-1's inventory"
+        },
+        {
+          "line": 1397,
+          "severity": "error",
+          "message": "{_amount} of the block is not a number",
+          "code": "remove {_amount} of block of coal from arg-1's inventory"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/realjbtytm--unofficial-minehutskripts/Skripts/KillLevels-1.0.3.sk",
+      "stagedName": "gt_043_KillLevels-1.0.3.sk",
+      "lines": 114,
+      "ok": false,
+      "durationMs": 77,
+      "diagnostics": [
+        {
+          "line": 6,
+          "severity": "error",
+          "message": "Use 'attacker' and/or 'victim' in damage/death events",
+          "code": "add 1 to {kills:level:%player%}"
+        },
+        {
+          "line": 8,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 1",
+          "code": "if {kills:level:%player%} is 1:"
+        },
+        {
+          "line": 13,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 10",
+          "code": "if {kills:level:%player%} is 10:"
+        },
+        {
+          "line": 18,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 20",
+          "code": "if {kills:level:%player%} is 20:"
+        },
+        {
+          "line": 23,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 35",
+          "code": "if {kills:level:%player%} is 35:"
+        },
+        {
+          "line": 28,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 50",
+          "code": "if {kills:level:%player%} is 50:"
+        },
+        {
+          "line": 34,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 75",
+          "code": "if {kills:level:%player%} is 75:"
+        },
+        {
+          "line": 39,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 100",
+          "code": "if {kills:level:%player%} is 100:"
+        },
+        {
+          "line": 45,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 150",
+          "code": "if {kills:level:%player%} is 150:"
+        },
+        {
+          "line": 50,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 200",
+          "code": "if {kills:level:%player%} is 200:"
+        },
+        {
+          "line": 56,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%Player%} is 250",
+          "code": "if {kills:level:%Player%} is 250:"
+        },
+        {
+          "line": 61,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 300",
+          "code": "if {kills:level:%player%} is 300:"
+        },
+        {
+          "line": 66,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is 350",
+          "code": "if {kills:level:%player%} is 350:"
+        },
+        {
+          "line": 72,
+          "severity": "warning",
+          "message": "Empty configuration section! You might want to indent one or more of the subsequent lines to make them belong to this section or remove the colon at the end of the line if you don't want this line to start a section.",
+          "code": "command /levels [<text>]:"
+        },
+        {
+          "line": 72,
+          "severity": "error",
+          "message": "Required entry 'trigger' is missing",
+          "code": "command /levels [<text>]:"
+        },
+        {
+          "line": 73,
+          "severity": "error",
+          "message": "Can't understand this structure: permission: levels.view",
+          "code": "permission: levels.view"
+        },
+        {
+          "line": 74,
+          "severity": "error",
+          "message": "Can't understand this structure: permission message: &9Kill Levels ➡ &7You do not have permission!",
+          "code": "permission message: &9Kill Levels ➡ &7You do not have permission!"
+        },
+        {
+          "line": 75,
+          "severity": "error",
+          "message": "Can't understand this structure: trigger",
+          "code": "trigger:"
+        },
+        {
+          "line": 102,
+          "severity": "warning",
+          "message": "Empty configuration section! You might want to indent one or more of the subsequent lines to make them belong to this section or remove the colon at the end of the line if you don't want this line to start a section.",
+          "code": "if player has permission \"op\":"
+        },
+        {
+          "line": 103,
+          "severity": "error",
+          "message": "indentation error: expected 4 tabs, but found 3 tabs",
+          "code": "send \"&9Running Kill Levels\""
+        },
+        {
+          "line": 106,
+          "severity": "warning",
+          "message": "If you meant to make the variable {kills:level:%Player%} a list, its name should contain '::'. Having a single ':' does nothing!",
+          "code": "set {kills:level:%Player%} to 0"
+        },
+        {
+          "line": 108,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is less than 1",
+          "code": "if {kills:level:%player%} is less than 1:"
+        },
+        {
+          "line": 112,
+          "severity": "error",
+          "message": "Can't understand this structure: if {kills:level:%player%} is greater than or equal to 351",
+          "code": "if {kills:level:%player%} is greater than or equal to 351:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/AntiAFK_cmd/AntiAFK_en.sk",
+      "stagedName": "gt_044_AntiAFK_en.sk",
+      "lines": 78,
+      "ok": false,
+      "durationMs": 81,
+      "diagnostics": [
+        {
+          "line": 51,
+          "severity": "error",
+          "message": "Can't understand this condition: 'loop-player has permission spiralyskript.antiafk.bypass'",
+          "code": "if loop-player has permission {@perm_afk_bypass}:"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/Client_side_sun_cmd/Client_side_sun_en.sk",
+      "stagedName": "gt_045_Client_side_sun_en.sk",
+      "lines": 24,
+      "ok": true,
+      "durationMs": 52,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/Crafting_table_cmd/Crafting_table_en.sk",
+      "stagedName": "gt_046_Crafting_table_en.sk",
+      "lines": 23,
+      "ok": true,
+      "durationMs": 51,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/Feed_cmd/Feed_en.sk",
+      "stagedName": "gt_047_Feed_en.sk",
+      "lines": 25,
+      "ok": true,
+      "durationMs": 55,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/Fly_cmd/fly_en.sk",
+      "stagedName": "gt_048_fly_en.sk",
+      "lines": 49,
+      "ok": true,
+      "durationMs": 67,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/Freeze_cmd/Freeze_en.sk",
+      "stagedName": "gt_049_Freeze_en.sk",
+      "lines": 33,
+      "ok": true,
+      "durationMs": 55,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/God_mode_cmd/God_mode_en.sk",
+      "stagedName": "gt_050_God_mode_en.sk",
+      "lines": 38,
+      "ok": true,
+      "durationMs": 56,
+      "diagnostics": []
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/Launch_firework_cmd/firework_en.sk",
+      "stagedName": "gt_051_firework_en.sk",
+      "lines": 47,
+      "ok": false,
+      "durationMs": 76,
+      "diagnostics": [
+        {
+          "line": 46,
+          "severity": "error",
+          "message": "Can't understand this condition/effect: send &b[Server name] &8» &r&6What a beautiful set of colors!",
+          "code": "send {@prefix}{@msg_fire}"
+        }
+      ]
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/Repair_cmd/Repair_en.sk",
+      "stagedName": "gt_052_Repair_en.sk",
+      "lines": 24,
+      "ok": true,
+      "durationMs": 53,
+      "diagnostics": []
+    }
+  ]
+}

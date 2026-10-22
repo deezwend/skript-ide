@@ -1,0 +1,187 @@
+# DERPI system by VanDerProtofsky
+
+# ########################################################################################
+# # PUBLIC COMMANDS ######################################################################
+# ########################################################################################
+    
+command /shack:
+    description: Teleports a quarried player back to the shack
+    usage: /shack
+    permission: derpi.inmate
+    trigger:
+        player's world is "world_derpi"
+        execute console command "/mv tp %player% world_derpi"
+    
+# ########################################################################################
+    
+command /quarry <offline player> [<number=0>] <text>:
+    description: Casts a player to the DERPI quarry
+    usage: /quarry <who> [<money balance offset>] <reason>
+    permission: derpi.moderator
+    trigger:
+        set {_target} to arg 1
+        set {_targetUUID} to {uuid.%arg 1%}
+        set {_offsetMoney} to arg 2
+        set {_reason} to arg 3
+
+        # Sanity check
+        if {_targetUUID} is not set:
+            message "&c*** That player is not known to the server"
+            exit trigger
+
+        # Force negative offset
+        if {_offsetMoney} is more than 0:
+            message "&c*** Please specify a negative amount of money to set or leave it at 0"
+            exit trigger
+        
+        if {derpi.%{_targetUUID}%.quarried} is set:
+            if {_target}'s world is not "world_derpi":
+                message "&c*** Oops, that player is not in the quarry world. Fixing..."
+                execute console command "/mv tp %{_target}% world_derpi"
+            else:
+                message "&c*** That player has already been quarried"
+                make the player execute command "/quarryinfo %{_target}%"
+            exit trigger
+
+        if {_target} is offline:
+            if {derpi.queuequarry.%{_targetUUID}%} is set:
+                message "&c*** That player is already queued for quarry"
+            else:
+                set {derpi.queuequarry.%{_targetUUID}%} to {_reason}
+                set {derpi.queuequarry.%{_targetUUID}%.offset} to {_offsetMoney}
+                message "&7*** That player is offline. They will be quarried when they next join the server."
+            exit trigger
+
+        message "*** Quarrying %{_target}%..."
+        
+        # Save metadata...
+        if command sender is the console:
+            set {derpi.%{_targetUUID}%.quarried.by} to "[Console]"
+        else:
+            set {derpi.%{_targetUUID}%.quarried.by} to "%command sender%"
+            
+        set {derpi.%{_targetUUID}%.quarried} to now
+        set {derpi.%{_targetUUID}%.quarried.because} to {_reason}
+        
+        # Logging
+        add "↳ &cCommited &7by &f%command sender% &7on &f%now%&7, with money set from &f%{_target}'s money% &7to &f%{_offsetMoney}% &7because &f%{_reason}%" to {derpi.%{_targetUUID}%.log::*}
+        
+        # Handle the target...
+        execute console command "/unjail %{_target}%"
+        execute console command "/perms player %{_target}% setgroup inmate"
+        execute console command "/mv tp %{_target}% world_derpi"
+        set {_target}'s money to {_offsetMoney}
+        
+        # Explain the basics to the target...
+        console command "/broadcast-irc &l*** &f%{_target}% &7has been &c&lcommitted to DERPI &7because: &f%{_reason}%"
+        
+        send "&4&l*** DEMEANOR ERADICATION & REHAB ***" to {_target}
+        send "&4&l***     PENITENTIARY INSTITUTE     ***" to {_target}
+        send "&cYou have been sent here because you have broken the rules." to {_target}
+        send " &cConsequently, you must earn back your freedom to play." to {_target}
+        send " &cThis is done by mining enough cobblestone to buy freedom." to {_target}
+        send " &cUse &f/shack &cto teleport to the shack." to {_target}
+        send " &cUse &f/money &cto check your balance." to {_target}
+        send " &cPvP is enabled and you will be unable to hear or send chat." to {_target}
+        
+        # Good luck.
+        heal {_target}
+        clear {_target}'s inventory
+        give a wooden pickaxe to {_target}
+        
+# ########################################################################################
+
+command /unquarry <offline player>:
+    description: Removes a player from the DERPI quarry
+    usage: /quarry <who>
+    permission: derpi.moderator
+    trigger:
+        set {_target} to arg 1
+        set {_targetUUID} to {uuid.%arg 1%}
+
+        # Sanity check
+        if {_targetUUID} is not set:
+            message "&c*** That player is not known to the server"
+            exit trigger
+
+        if {_target} is offline:
+            {derpi.%{_targetUUID}%.quarried} is set
+
+            if {derpi.queuerelease.%{_targetUUID}%} exists:
+                delete {derpi.queuerelease.%{_targetUUID}%}
+                message "&7*** There was a release queued for this player. They will no longer be released on next join."
+            else:
+                set {derpi.queuerelease.%{_targetUUID}%} to true
+                message "&7*** That player is offline. They will be released when they next join the server."
+            exit trigger
+
+        if {derpi.%{_targetUUID}%.quarried} is not set:
+            if {derpi.queuequarry.%{_targetUUID}%} exists:
+                {_target} is offline
+                delete {derpi.queuequarry.%{_targetUUID}%}
+                delete {derpi.queuequarry.%{_targetUUID}%.offset}
+                message "&7*** There was a quarry queued for this player. They will no longer be quarried on next join."
+            else:
+                message "&c*** That player is not quarried"
+            exit trigger
+
+        add "↳ &aReleased &7by &f%command sender% &7on &f%now%" to {derpi.%{_targetUUID}%.log::*}
+        message "*** Unquarrying %{_target}%..."
+        
+        delete {derpi.%{_targetUUID}%.quarried}
+        delete {derpi.%{_targetUUID}%.quarried.by}
+        delete {derpi.%{_targetUUID}%.quarried.because}
+        delete {derpi.freepickaxe.%{_targetUUID}%}
+        set {approval.playtime.%{_target}%} to 0 seconds
+                    
+        execute console command "/perms player %{_target}% setgroup default"
+        execute console command "/mvtp %{_target}% a:newbie_part1"
+        
+        console command "/broadcast-irc &l*** &f%{_target}% &7has been &2&lreleased from DERPI!"
+        wait 1 second
+        send "&c*** As part of your release, you must go through the approval process again and accept the rules." to {_target}
+        
+# ########################################################################################
+
+command /quarryinfo <offline player>:
+    description: Gets DERPI information on a player
+    usage: /quarryinfo <who>
+    permission: derpi.moderator
+    trigger:
+        set {_target} to arg 1
+        set {_targetUUID} to {uuid.%{_target}%}
+        
+        if {_targetUUID} is not set:
+            message "&c*** That player is not known to the server"
+        else if {derpi.queuequarry.%{_targetUUID}%} exists:
+            message "&7*** DERPI report of: &f%{_target}%"
+            message "&7• queued for quarry because &f%{derpi.queuequarry.%{_targetUUID}%}%"
+            message "&7• with penalty &f%{derpi.queuequarry.%{_targetUUID}%.offset}%"
+        else if {derpi.%{_targetUUID}%.quarried} is set:
+            message "&7*** DERPI report of: &f%{_target}%"
+            message "&7• quarried by &f%{derpi.%{_targetUUID}%.quarried.by}%"
+            message "&7• on &f%{derpi.%{_targetUUID}%.quarried}%"
+            message "&7• because &f%{derpi.%{_targetUUID}%.quarried.because}%"
+            if {derpi.queuerelease.%{_targetUUID}%} exists:
+                message "&7• queued for release when they next join the server"
+        else:
+            message "&7*** That player is not quarried"
+            
+# ########################################################################################
+
+command /quarrylog <offline player>:
+    description: Gets DERPI logs on a player name
+    usage: /quarrylog <who>
+    permission: derpi.moderator
+    trigger:
+        set {_target} to arg 1
+        set {_targetUUID} to {uuid.%{_target}%}
+        
+        if {_targetUUID} is not set:
+            message "&c*** That player is not known to the server"
+        else if {derpi.%{_targetUUID}%.log::*} exists:
+            message "&7&l*** &7DERPI log of: &f%{_target}%"
+            loop {derpi.%{_targetUUID}%.log::*}:
+                message loop-value
+        else:
+            message "&7*** That player has no prior quarries"

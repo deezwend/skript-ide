@@ -1,0 +1,41 @@
+# Skript IDE renklendirme örneği
+# Bu dosya Faz 1'deki sözdizimi renklendirmesini test etmek için hazırlandı.
+
+options:
+	prefix: &8[&6Sunucu&8]&r
+	baslangic-parasi: 100
+
+variables:
+	{coins::*} = 0
+
+on join:
+	if {coins::%player's uuid%} is not set:
+		set {coins::%player's uuid%} to {@baslangic-parasi}
+		send "{@prefix} &aHoş geldin, %player%! Sana &e%{@baslangic-parasi}% &acoin verildi." to player
+	else:
+		send "{@prefix} Tekrar hoş geldin! Bakiyen: &e%{coins::%player's uuid%}%" to player
+	wait 2 seconds
+	play sound "entity.player.levelup" to player
+
+command /para [<offlineplayer>]:
+	permission: sunucu.para
+	permission message: &cBuna yetkin yok!
+	aliases: /coins, /bakiye
+	cooldown: 3 seconds
+	trigger:
+		set {_hedef} to arg-1 ? player
+		send "%{_hedef}%: <gold>%paraGetir({_hedef})%</gold> coin"
+
+every 5 minutes:
+	loop all players:
+		add 10 to {coins::%loop-player's uuid%}
+		send "{@prefix} &7Aktiflik ödülü: <##55ff55>+10 coin" to loop-player
+
+function paraGetir(p: offlineplayer, varsayilan: number = 0) :: number:
+	return {coins::%{_p}'s uuid%} ? {_varsayilan}
+
+on damage of player:
+	victim's health is less than 5
+	attacker is a player
+	cancel event
+	send "&c""Korumalı"" oyuncuya vuramazsın! %%50 indirim yok." to attacker

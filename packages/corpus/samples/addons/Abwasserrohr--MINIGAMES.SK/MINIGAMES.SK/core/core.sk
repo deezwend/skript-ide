@@ -1,0 +1,142 @@
+
+import:
+  java.util.HashMap
+  
+
+function mgGetCurrentGameMoney(game:text,player:player,currencyname:text,persistent:boolean=false) :: number:
+  if {_persistent} is false:
+    set {_money} to metadata value "MG.SK|money|%{_player}%|%{_game}%" of getDummy()
+    if {_money} is set:
+      if {_money}.get({_currencyname}) is set:
+        return {_money}.get({_currencyname})
+      else:
+        return 0
+
+#
+# > Returns a money list which contains all currently online players.
+function mgGetCurrentGameMoneyList(game:text,currencyname:text,persistent:boolean=false) :: object:
+  set {_holders} to metadata value "MG.SK|money|holderlist" of getDummy()
+  set {_money} to new HashMap()
+  loop ...{_holders}.keySet():
+    set {_value} to metadata value "MG.SK|money|%loop-value%|%{_game}%" of getDummy()
+    if {_value} is set:
+      loop ...{_value}.keySet():
+        if loop-value-2 is {_currencyname}:
+          {_money}.put("%loop-value-1%",{_value}.get(loop-value-2))
+  return {_money}
+
+function mgSetCurrentGameMoney(game:text,player:player,currencyname:text,amount:number,persistent:boolean=false):
+
+  if {_persistent} is false:
+
+    set {_moneylist} to metadata value "MG.SK|money|%{_player}%|%{_game}%" of getDummy()
+    if {_moneylist} is not set:
+      set {_moneylist} to HashMap()
+    if {_moneylist}.get({_currencyname}) is set:
+      {_moneylist}.remove({_currencyname})
+    {_moneylist}.put({_currencyname},{_amount})
+    set metadata value "MG.SK|money|%{_player}%|%{_game}%" of getDummy() to {_moneylist}
+
+	
+    set {_holders} to metadata value "MG.SK|money|holderlist" of getDummy()
+    set {_currencies} to metadata value "MG.SK|money|currencylist" of getDummy()
+
+    if {_holders} is not set:
+      set {_holders} to new HashMap()
+    if {_holders}.get("%{_player}%") is not set:
+      {_holders}.put("%{_player}%",true)
+
+    if {_currencies} is not set:
+      set {_currencies} to new HashMap()
+    if {_currencies}.get("%{_currencyname}%") is not set:
+      {_currencies}.put("%{_currencyname}%",true)
+
+    set metadata value "MG.SK|money|holderlist" of getDummy() to {_holders}
+    set metadata value "MG.SK|money|currencylist" of getDummy() to {_currencies}
+
+function mgGetTemporaryGameData(key:text) :: object:
+  set {_data} to metadata value "MG.SK|TemporaryGameData" of getDummy()
+  return {_data}.get({_key})
+
+function mgSetTemporaryGameData(key:text,object:object):
+  set {_data} to metadata value "MG.SK|TemporaryGameData" of getDummy()
+  if {_data} is not set:
+    set {_data} to HashMap()
+  {_data}.put({_key},{_object})
+  set metadata value "MG.SK|TemporaryGameData" of getDummy() to {_data}
+
+
+function mgPlayerJoin(player:player):
+  message "1" to {_player}
+
+function mgPlayerQuit(player:player):
+  message "1" to {_player}
+
+function mgGetCurrentGameTimeout() :: number:
+  return metadata value "MG.SK|CurrentGameTimeout" of getDummy()
+
+
+function mgSetCurrentGameTimeout(timeout:number):
+  set metadata value "MG.SK|CurrentGameTimeout" of getDummy() to {_timeout}
+
+#
+# > Stops any games that are running.
+function mgStopGame():
+  mgSetCurrentGameStatus("stop")
+  mgClearGameData()
+
+  mgStartGame(getGameLobby())
+
+function mgClearGameData():
+
+  set {_game} to mgGetCurrentGame()
+  set {_world} to metadata value "MG.SK|CurrentWorld" of getDummy()
+
+  execute console command "/sk disable MINIGAMES.SK/games/%{_game}%/init.sk"
+
+  set {_currencies} to metadata value "MG.SK|money|currencylist" of getDummy()
+  set {_moneyholderlist} to metadata value "MG.SK|money|holderlist" of getDummy()
+
+  set {_pointsholderlist} to metadata value "MG.SK|points|holderlist" of getDummy()
+  set {_pointslist} to metadata value "MG.SK|points|pointslist" of getDummy()
+
+  loop ...{_moneyholderlist}.keySet():
+    set {_player} to loop-value
+    delete metadata value "MG.SK|money|%{_player}%|%{_game}%" of getDummy()
+
+  loop ...{_pointsholderlist}.keySet():
+    set {_player} to loop-value
+    delete metadata value "MG.SK|points|%{_player}%|%{_game}%" of getDummy()
+
+  delete metadata value "MG.SK|money|currencylist" of getDummy()
+  delete metadata value "MG.SK|money|holderlist" of getDummy()
+  delete metadata value "MG.SK|points|holderlist" of getDummy()
+  delete metadata value "MG.SK|points|pointslist" of getDummy()
+  delete metadata value "MG.SK|TemporaryGameData" of getDummy()
+  mgSetCurrentGameStatus("")
+  mgSetCurrentGame("")
+  mgWipePersonalSidebarContent(null)
+  mgWipeGlobalSidebarContent()
+  #
+  # > Wait 10 seconds before deleting the old game world.
+  wait 10 seconds
+  #
+  # > Delete the old game world of the lobby.
+  mgDeleteGameWorld({_world})
+
+#
+# > Starts the defined game.
+function mgStartGame(game:text):
+  if mgGetCurrentGame() is "":
+    mgSetCurrentGame({_game})
+    mgCreateGameTables({_game})
+    mgSetCurrentGameStatus("init")
+    mgCreateGameWorld({_game},"1")
+    execute console command "/sk enable MINIGAMES.SK/games/%{_game}%/init.sk"
+
+#
+# > Stops the game after it has been finished successfully.
+function mgFinishGame():
+  mgSetCurrentGameStatus("finish")
+  mgStopGame()
+

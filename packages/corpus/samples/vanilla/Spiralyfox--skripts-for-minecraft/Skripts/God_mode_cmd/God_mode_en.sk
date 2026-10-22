@@ -1,0 +1,37 @@
+# ==================================================
+# Script made by Spiralyfox
+# Discord : @Spiralyfox
+# Script ideas ? Need a specific Skript ?
+# Contact me on Discord to contribute to the community.
+# ==================================================
+
+options:
+    # ==================================================
+    # General
+    # ==================================================
+    prefix: &b[Server name] &8» &r
+
+    # ==================================================
+    # Permissions
+    # ==================================================
+    perm_god: spiralyskript.god.god
+
+    # ==================================================
+    # Messages
+    # ==================================================
+    msg_god_on: &aGod mode is now enabled. You are invincible !
+    msg_god_off: &cGod mode has been disabled. You are no longer invincible.
+
+command /god:
+    permission: {@perm_god}
+    trigger:
+        if {god-mode-%player's uuid%} is not set:
+            set {god-mode-%player's uuid%} to true
+            send "{@prefix}{@msg_god_on}" to player
+        else:
+            delete {god-mode-%player's uuid%}
+            send "{@prefix}{@msg_god_off}" to player
+
+on damage of player:
+    if {god-mode-%victim's uuid%} is set:
+        cancel event

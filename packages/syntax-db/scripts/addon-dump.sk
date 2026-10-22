@@ -1,0 +1,118 @@
+# Skript IDE — addon syntax dökümü (scripts/generate-addons.ts kullanır; elle çalıştırılmaz).
+# skript-reflect ile Skript'in çalışan sunucudaki syntax kayıt defterini okur ve her kaydı kökeniyle
+# (hangi addon kaydettiyse) JSON'a yazar. Skript'in kendi `gen-docs` çıktısı addon syntax'larını
+# içermediği (yalnızca @Name taşıyan sınıfları yazıyor) için addon verisi buradan alınır.
+# Skript 2.12 – 2.17 arasındaki API farkları yüzünden olay anahtarı kullanılmaz: dört temel anahtarda
+# bulunmayan kayıtlar olaydır. __OUTPUT__ betiği yükleyen araç tarafından mutlak dosya yoluyla değiştirilir.
+
+import:
+	ch.njol.skript.Skript
+	ch.njol.skript.registrations.Classes
+	ch.njol.skript.lang.function.Functions
+	ch.njol.skript.doc.Name
+	ch.njol.skript.doc.Description
+	ch.njol.skript.doc.Examples
+	ch.njol.skript.doc.Since
+	org.skriptlang.skript.registration.SyntaxRegistry
+	com.google.gson.JsonObject
+	com.google.gson.JsonArray
+	com.google.gson.GsonBuilder
+	java.io.File
+	java.io.FileWriter
+	java.nio.charset.StandardCharsets
+
+function ideStrings(values: objects) :: object:
+	set {_array} to new JsonArray()
+	loop {_values::*}:
+		{_array}.add("%loop-value%")
+	return {_array}
+
+function ideEntry(info: object, kind: text) :: object:
+	set {_e} to new JsonObject()
+	{_e}.addProperty("kind", {_kind})
+	{_e}.addProperty("origin", {_info}.origin().name())
+	set {_type} to {_info}.type()
+	{_e}.addProperty("class", {_type}.getName())
+	{_e}.add("patterns", ideStrings(...{_info}.patterns()))
+	if {_kind} is "expression":
+		set {_returns} to Classes.getSuperClassInfo({_info}.returnType())
+		if {_returns} is set:
+			{_e}.addProperty("returns", {_returns}.getCodeName())
+	set {_name} to {_type}.getAnnotation(Name)
+	if {_name} is set:
+		{_e}.addProperty("name", {_name}.value())
+	set {_description} to {_type}.getAnnotation(Description)
+	if {_description} is set:
+		{_e}.add("description", ideStrings(...{_description}.value()))
+	set {_examples} to {_type}.getAnnotation(Examples)
+	if {_examples} is set:
+		{_e}.add("examples", ideStrings(...{_examples}.value()))
+	set {_since} to {_type}.getAnnotation(Since)
+	if {_since} is set:
+		{_e}.add("since", ideStrings(...{_since}.value()))
+	return {_e}
+
+on load:
+	set {_root} to new JsonObject()
+	{_root}.addProperty("skript", Skript.getVersion().toString())
+	set {_registry} to Skript.instance().syntaxRegistry()
+	set {_syntaxes} to new JsonArray()
+	set {_keys::structure} to SyntaxRegistry.STRUCTURE
+	set {_keys::section} to SyntaxRegistry.SECTION
+	set {_keys::effect} to SyntaxRegistry.EFFECT
+	set {_keys::condition} to SyntaxRegistry.CONDITION
+	set {_keys::expression} to SyntaxRegistry.EXPRESSION
+	loop {_keys::*}:
+		loop ...{_registry}.syntaxes(loop-value-1):
+			set {_seen::%loop-value-2.type().getName()%} to true
+			{_syntaxes}.add(ideEntry(loop-value-2, loop-index-1))
+	loop ...{_registry}.elements():
+		set {_info} to loop-value
+		if {_seen::%{_info}.type().getName()%} is not set:
+			set {_e} to ideEntry({_info}, "event")
+			{_e}.addProperty("name", {_info}.name())
+			{_e}.add("description", ideStrings(...{_info}.description()))
+			{_e}.add("since", ideStrings(...{_info}.since()))
+			{_syntaxes}.add({_e})
+	{_root}.add("syntaxes", {_syntaxes})
+	set {_types} to new JsonArray()
+	loop ...Classes.getClassInfos():
+		set {_classInfo} to loop-value
+		set {_t} to new JsonObject()
+		{_t}.addProperty("codeName", {_classInfo}.getCodeName())
+		{_t}.addProperty("docName", {_classInfo}.getDocName())
+		{_t}.addProperty("class", {_classInfo}.getC().getName())
+		set {_patterns} to new JsonArray()
+		set {_user::*} to ...{_classInfo}.getUserInputPatterns()
+		loop {_user::*}:
+			{_patterns}.add(loop-value-2.pattern())
+		delete {_user::*}
+		{_t}.add("patterns", {_patterns})
+		{_types}.add({_t})
+	{_root}.add("types", {_types})
+	set {_functions} to new JsonArray()
+	loop ...Functions.getJavaFunctions():
+		set {_function} to loop-value
+		set {_f} to new JsonObject()
+		{_f}.addProperty("name", {_function}.getName())
+		{_f}.addProperty("class", {_function}.getClass().getName())
+		{_f}.addProperty("signature", {_function}.getSignature().toString())
+		set {_returns} to {_function}.getReturnType()
+		if {_returns} is set:
+			{_f}.addProperty("returns", {_returns}.getCodeName())
+		set {_lines::*} to ...{_function}.getDescription()
+		{_f}.add("description", ideStrings({_lines::*}))
+		delete {_lines::*}
+		set {_lines::*} to ...{_function}.getExamples()
+		{_f}.add("examples", ideStrings({_lines::*}))
+		delete {_lines::*}
+		set {_since} to {_function}.getSince()
+		if {_since} is set:
+			{_f}.addProperty("since", {_since})
+		{_functions}.add({_f})
+	{_root}.add("functions", {_functions})
+	set {_gson} to new GsonBuilder().disableHtmlEscaping().create()
+	set {_writer} to new FileWriter(new File("__OUTPUT__"), StandardCharsets.UTF_8)
+	{_writer}.write({_gson}.toJson({_root}))
+	{_writer}.close()
+	broadcast "IDE-DUMP-DONE"

@@ -1,0 +1,123 @@
+# DERPI system by VanDerProtofsky
+
+# ########################################################################################
+# # EVENTS ###############################################################################
+# ########################################################################################
+        
+on rightclick on a sign:
+    world of the clicked block is "world_derpi"
+    {derpi.%player's uuid%.quarried} is set
+        
+    if line 2 of the clicked block contains "[Freedom]":
+        if player's money >= 270:
+            remove 270 from player's money 
+            execute console command "/unquarry %player%"
+        else:
+            message "&c&l*** &cYou cannot afford freedom! You only have &f%player's money%"
+        exit trigger
+        
+    if line 2 of the clicked block contains "[Cobblestone]":
+        if player has 16 cobblestone:
+            add 2.50 to the player's account
+            remove 16 cobblestone from player's inventory
+            message "&7*** You have earned &f$2.50&7 for 16 cobblestone mined"
+        else:
+            message "&c&l*** &cYou don't have 16 cobblestone! Go mine some more!"
+        exit trigger
+        
+    if line 2 of the clicked block contains "[Food]":
+        if player has 8 cobblestone:
+            give 1 baked potato to the player
+            remove 8 cobblestone from player's inventory
+            message "&7*** You get a baked potato for 8 cobblestone mined"
+        else:
+            message "&c&l*** &cYou don't have 8 cobblestone! Go mine some more!"
+        exit trigger
+        
+    if line 2 of the clicked block contains "[Pickaxe]":
+        if player has 16 cobblestone:
+            give 1 wooden pickaxe to the player
+            remove 16 cobblestone from player's inventory
+            message "&7*** You get a wooden pickaxe for 16 cobblestone mined"
+        else if {derpi.freepickaxe.%player's uuid%} was less than a day ago:
+            message "&c&l*** &cYou don't have 16 cobblestone and you've already claimed a free pickaxe today!"
+            message "&c&l*** &cShould have managed your cobblestone better. Try again tomorrow."
+        else:
+            set {derpi.freepickaxe.%player's uuid%} to now
+            give 1 wooden pickaxe to the player
+            message "&c&l*** &cYou don't have 16 cobblestone! You've been given a free pickaxe for today"
+            message "&c&l*** &cManage your cobblestone better. If you can't pay for another pickaxe today, you will have to try again tomorrow!"
+        exit trigger
+    
+on player join:
+    wait for 2 seconds
+    set {_targetUUID} to player's UUID
+
+    # Process queued quarries
+    if {derpi.queuequarry.%{_targetUUID}%} exists:
+        set {_offset} to {derpi.queuequarry.%{_targetUUID}%.offset}
+        set {_reason} to {derpi.queuequarry.%{_targetUUID}%}
+
+        # Handle legacy entries without offsets
+        if {_offset} is not set:
+            set {_offset} to 0
+
+        execute console command "/quarry %player% %{_offset}% %{_reason}%"
+        delete {derpi.queuequarry.%{_targetUUID}%}
+        delete {derpi.queuequarry.%{_targetUUID}%.offset}
+
+    # Process queued releases
+    else if {derpi.queuerelease.%{_targetUUID}%} exists:
+        execute console command "/unquarry %player%"
+        delete {derpi.queuerelease.%{_targetUUID}%}
+
+    # Broadcast inmate statuses and perform security checks
+    else if {derpi.%{_targetUUID}%.quarried} is set:
+        wait for 2 seconds
+        console command "/broadcast-irc &l*** &f%player% &7is in the &c&lDERPI&7! Their balance is: &f%player's money%"
+        message "You are in the &lDemeanor Eradication and Rehabilitation Penitentiary Institute &r(DERPI)"
+        message "&7Beware the inmates and use &2/shack &7if you are stuck."
+
+        # Extra layer of security; ensure player is firmly in the DERPI
+        execute console command "/perms player %player% setgroup inmate"
+        execute console command "/mv tp %player% world_derpi"
+
+# Blocks sending of money to quarried players
+on command:
+    command is "epay" or "pay" or "essentials:epay" or "essentials:pay"
+    set {_s::*} to arguments split at " "
+    set {_target} to {_s::1}
+    set {_amount} to {_s::2}
+
+    # Do not bother if paying to a player we don't have a UUID for;
+    # Safe to assume that they have not been quarried
+    if {uuid.%{_target}%} is not set:
+        exit trigger
+    else:
+        set {_targetUUID} to {uuid.%{_target}%}
+
+    if {derpi.%{_targetUUID}%.quarried} is set:
+        cancel the event
+        message "&c*** You cannot send money to quarried players"
+        message "Blocked a payment of %{_amount}% from %command sender% to quarried player %{_target}%" to console
+
+# Prevent PVP for spectators
+on damage of player:
+    attacker is player
+    {derpi.%attacker's uuid%.quarried} is set
+    {derpi.%victim's uuid%.quarried} is not set
+    message "&c*** You cannot attack DERPI spectators" to attacker
+    cancel the event
+
+on damage of player:
+    attacker is player
+    {derpi.%attacker's uuid%.quarried} is not set
+    {derpi.%victim's uuid%.quarried} is set
+    message "&c*** You cannot attack DERPI inmates as a spectator" to attacker
+    cancel the event
+
+# Prevent death messages
+on death:
+    {derpi.%player's uuid%.quarried} is set
+    message "*** DERPI death: %death message%" to console
+    set death message to ""

@@ -1,0 +1,46 @@
+# ==================================================
+# Script réalisé par Spiralyfox
+# Discord : @Spiralyfox
+# Des idées de Skripts ? Besoin d’un script spécifique ?
+# Contactez-moi sur Discord pour contribuer à la communauté.
+# ==================================================
+
+options:
+    # ==================================================
+    # General
+    # ==================================================
+    prefix: &b[Server name] &8» &r
+    cooldown: 5 seconds
+
+    # ==================================================
+    # Permissions
+    # ==================================================
+    perm_fire: spiralyskript.firework.fire
+    perm_bypass: spiralyskript.firework.bypasscooldown
+
+    # ==================================================
+    # Messages
+    # ==================================================
+    msg_cooldown: &cYou are going too fast!
+    msg_fire: &6What a beautiful set of colors!
+
+command /fire:
+    permission: {@perm_fire}
+    cooldown: {@cooldown}
+    cooldown bypass: {@perm_bypass}
+    cooldown message: {@prefix}{@msg_cooldown}
+    trigger:
+        set {_random} to a random integer between 1 and 5
+
+        if {_random} = 1:
+            launch ball large coloured red, green, blue, purple, cyan and pink fading to lime, yellow, light blue, magenta, white and orange at player's location with duration 2
+        else if {_random} = 2:
+            launch ball large coloured blue, purple, red, yellow, green and light blue fading to white, orange, lime, cyan, magenta and pink at player's location with duration 2
+        else if {_random} = 3:
+            launch ball large coloured cyan, orange, magenta, white, lime and red fading to blue, purple, green, pink, yellow and light blue at player's location with duration 2
+        else if {_random} = 4:
+            launch ball large coloured light blue, magenta, yellow, pink, blue and purple fading to red, green, cyan, lime, white and orange at player's location with duration 2
+        else if {_random} = 5:
+            launch ball large coloured white, orange, lime, blue, cyan and pink fading to red, purple, yellow, green, magenta and light blue at player's location with duration 2
+
+        send {@prefix}{@msg_fire}

@@ -1,0 +1,23 @@
+# ==================================================
+# Script made by Spiralyfox
+# Discord : @Spiralyfox
+# Script ideas ? Need a specific Skript ?
+# Contact me on Discord to contribute to the community.
+# ==================================================
+
+options:
+    # ==================================================
+    # General
+    # ==================================================
+    prefix: &b[Server name] &8» &r
+
+    # ==================================================
+    # Permissions
+    # ==================================================
+    perm_sun: spiralyskript.sun.sun
+
+command /sun:
+    permission: {@perm_sun}
+    trigger:
+        set client weather of player to sun
+        send "{@prefix}The sun is shining again !"

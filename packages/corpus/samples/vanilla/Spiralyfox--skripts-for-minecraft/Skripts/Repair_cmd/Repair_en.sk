@@ -1,0 +1,23 @@
+# ==================================================
+# Script made by Spiralyfox
+# Discord : @Spiralyfox
+# Script ideas ? Need a specific Skript ?
+# Contact me on Discord to contribute to the community.
+# ==================================================
+
+options:
+    # ==================================================
+    # General
+    # ==================================================
+    prefix: &b[Server name] &8» &r
+
+    # ==================================================
+    # Permissions
+    # ==================================================
+    perm_repair: spiralyskript.repair.repair
+
+command /repair:
+    permission: {@perm_repair}
+    trigger:
+        repair tool of player
+        send "{@prefix}Your tools have been repaired !" to player

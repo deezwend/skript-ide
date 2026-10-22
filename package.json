@@ -1,0 +1,17 @@
+{
+  "name": "skript-ide",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Minecraft Skript geliştirme ortamı",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "postinstall": "install-electron",
+    "dev": "npm run dev -w @skript-ide/desktop",
+    "build": "npm run build -w @skript-ide/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dist": "npm run dist -w @skript-ide/desktop"
+  }
+}

@@ -1,0 +1,237 @@
+import:
+	org.bukkit.Color
+
+#======================================================#
+#                                                      #
+#                     判定部分                         #
+#                                                      #
+#======================================================#
+
+every ticks: #drag判定
+	{editMode} is not set
+	{actor} is set
+	{autoPlay::%uuid of {actor}%} is not "&a开"
+	loop 2 times:
+		set {_get::*} to getNearestDrag(getCursorPos({actor}), {actor})
+		set {_index} to {_get::1}
+		{_index} is set
+		set {-onstage::%{_index}%::hited} to true
+
+function exact(index: text, time: number):
+	set {_face} to {-onstage::%{_index}%::face}
+	set {_type} to {-onstage::%{_index}%::type}
+	set {_x} to {-onstage::%{_index}%::x}
+	set {_y} to {-onstage::%{_index}%::y}
+	set {_loc} to location({_x}+0.5, {_y}+0.55, 5, world "world", 180, 0) if {_face} is "w"
+	set {_loc} to location(5, {_y}+0.55, -1*{_x}+0.5, world "world", 90, 0) if {_face} is "a"
+	set {_loc} to location(-1*{_x}+0.55, {_y}+0.5, -4, world "world", 0, 0) if {_face} is "s"
+	set {_loc} to location(-4, {_y}+0.55, {_x}+0.5, world "world", -90, 0) if {_face} is "d"
+
+	if {_type} is not "hold":
+		add 1 to {combo}
+		play sound "entity.player.hurt" with pitch 2 to all players if {hitSound::%uuid of {actor}%} is "&a开"
+		add 1 to {hitNotes}
+		add 1 to {statistics::exact}
+	else:
+		add 1 to {statistics::exactHold}
+	set {alphaTime} to 11
+	set {score} to floor(1000000/{maxNote}*{hitNotes})
+	summon text display at {_loc}:
+		set {_alpha} to 255
+		set text of the entity to "&bExact" if {showOffset::%uuid of {actor}%} is not "&a开"
+		if {showOffset::%uuid of {actor}%} is "&a开":
+			set text of the entity to "&b+%round({_time})%" if {_time} > 0
+			set text of the entity to "&b%round({_time})%" if {_time} < 0
+			set text of the entity to "&b" if {_time} = 0
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set {_scale} to 3
+		set display scale of the entity to vector({_scale},{_scale},{_scale})
+		set display translation of the entity to vector({_scale}*-0.015,{_scale}*-0.1,0)
+		set metadata value "belongsto" of the entity to uuid of {_ent1}
+		set shadow strength of the entity to 0
+		set {_text} to the entity
+	summon text display at {_loc}:
+		set {_alpha} to 255
+		set text of the entity to "&b█"
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set opacity of the entity to 14
+		set {_scale2} to 8
+		set {_scale2toDelete} to 3
+		set display scale of the entity to vector(2,2,2)
+		set display translation of the entity to vector({_scale2}*-0.015,{_scale2}*-0.15+0.1,0)
+		set metadata value "belongsto" of the entity to uuid of {_ent1}
+		set shadow strength of the entity to 0
+		set {_text2} to the entity
+	loop 10 times:
+		remove 24 from {_alpha}
+		set opacity of {_text} to {_alpha}
+		if {_alpha} > 40:
+			set opacity of {_text2} to {_alpha} / 4
+		else:
+			set opacity of {_text2} to 14
+		set {_scale} to {_scale} * 0.9
+		set {_scale} to 1 if {_scale} < 1
+		set {_scale2toDelete} to {_scale2toDelete} * 0.7
+		set {_scale4} to {_scale2} - {_scale2toDelete}
+		set display scale of {_text} to vector({_scale},{_scale},{_scale})
+		set display scale of {_text2} to vector({_scale4},{_scale4},{_scale4})
+		set display translation of {_text} to vector({_scale}*-0.015,{_scale}*-0.15,0)
+		set display translation of {_text2} to vector({_scale4}*-0.015,{_scale4}*-0.15+0.1,0)
+		wait 1 tick
+	kill {_text}
+	kill {_text2}
+
+function great(index: text, el: text, time: number):
+	set {_face} to {-onstage::%{_index}%::face}
+	set {_type} to {-onstage::%{_index}%::type}
+	set {_x} to {-onstage::%{_index}%::x}
+	set {_y} to {-onstage::%{_index}%::y}
+	set {_loc} to location({_x}+0.5, {_y}+0.55, 5, world "world", 180, 0) if {_face} is "w"
+	set {_loc} to location(5, {_y}+0.55, -1*{_x}+0.5, world "world", 90, 0) if {_face} is "a"
+	set {_loc} to location(-1*{_x}+0.55, {_y}+0.5, -4, world "world", 0, 0) if {_face} is "s"
+	set {_loc} to location(-4, {_y}+0.55, {_x}+0.5, world "world", -90, 0) if {_face} is "d"
+
+	play sound "entity.player.hurt" with pitch 2 to all players if {hitSound::%uuid of {actor}%} is "&a开"
+	add 1 to {combo}
+	add 0.7 to {hitNotes}
+	add 1 to {statistics::just}
+	set {alphaTime} to 11
+	set {score} to floor(1000000/{maxNote}*{hitNotes})
+	if {_el} is "early":
+		send action bar "&bEarly" to all players
+	if {_el} is "late":
+		send action bar "&6Late" to all players
+	summon text display at {_loc}:
+		set {_alpha} to 255
+		set text of the entity to "&eJust" if {showOffset::%uuid of {actor}%} is not "&a开"
+		if {showOffset::%uuid of {actor}%} is "&a开":
+			set text of the entity to "&e+%round({_time})%" if {_time} > 0
+			set text of the entity to "&e%round({_time})%" if {_time} < 0
+			set text of the entity to "&b" if {_time} = 0
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set {_scale} to 3
+		set display scale of the entity to vector({_scale},{_scale},{_scale})
+		set display translation of the entity to vector({_scale}*-0.015,{_scale}*-0.1,0)
+		set metadata value "belongsto" of the entity to uuid of {_ent1}
+		set shadow strength of the entity to 0
+		set {_text} to the entity
+	summon text display at {_loc}:
+		set {_alpha} to 255
+		set text of the entity to "&e█"
+		entity.setBackgroundColor(Color.fromARGB(0,0,0,0))
+		set opacity of the entity to 14
+		set {_scale2} to 8
+		set {_scale2toDelete} to 3
+		set display scale of the entity to vector(2,2,2)
+		set display translation of the entity to vector({_scale2}*-0.015,{_scale2}*-0.15+0.1,0)
+		set metadata value "belongsto" of the entity to uuid of {_ent1}
+		set shadow strength of the entity to 0
+		set {_text2} to the entity
+	loop 10 times:
+		remove 24 from {_alpha}
+		set opacity of {_text} to {_alpha}
+		if {_alpha} > 40:
+			set opacity of {_text2} to {_alpha} / 4
+		else:
+			set opacity of {_text2} to 14
+		set {_scale} to {_scale} * 0.9
+		set {_scale} to 1 if {_scale} < 1
+		set {_scale2toDelete} to {_scale2toDelete} * 0.5
+		set {_scale4} to {_scale2} - {_scale2toDelete}
+		set display scale of {_text} to vector({_scale},{_scale},{_scale})
+		set display scale of {_text2} to vector({_scale4},{_scale4},{_scale4})
+		set display translation of {_text} to vector({_scale}*-0.015,{_scale}*-0.15,0)
+		set display translation of {_text2} to vector({_scale4}*-0.015,{_scale4}*-0.15+0.1,0)
+		wait 1 tick
+	kill {_text}
+	kill {_text2}
+
+function miss():
+	set {combo} to 0
+	add 1 to {statistics::miss}
+
+#hitNote移至input.sk
+
+function deleteNote(index: text):
+	if {-onstage::%{_index}%::type} is "tap", "drag" or "hold":
+		kill fake entity {-onstage::%{_index}%::entity}
+		clear {-onstage::%{_index}%::*}
+	else if {-onstage::%{_index}%::type} is "flick":
+		kill fake entity {-onstage::%{_index}%::entity}
+		kill fake entity {-onstage::%{_index}%::textdisplay}
+		clear {-onstage::%{_index}%::*}
+	else if {-onstage::%{_index}%::type} is "double":
+		kill fake entity {-onstage::%{_index}%::entity}
+		kill fake entity {-onstage::%{_index}%::line}
+		clear {-onstage::%{_index}%::*}
+
+function checkIfTurned(index: text):
+	set {_face} to {-onstage::%{_index}%::face}
+	set {_turn} to {-onstage::%{_index}%::turn}
+	{actor} is set
+	{autoPlay::%uuid of {actor}%} is not "&a开"
+	clear {_pass}
+	loop 10 times:
+		set {_yaw} to yaw of {actor}
+		set {_yaw} to {_yaw} - 360 if {_yaw} > 180
+		set {_yaw} to {_yaw} + 360 if {_yaw} < -180
+		if {_face} is "w":
+			if {_turn} is "left":
+				if {_yaw} is between -135 and -45:
+					set {_pass} to true
+					exit loop
+			else if {_turn} is "right":
+				if {_yaw} is between 45 and 135:
+					set {_pass} to true
+					exit loop
+
+		else if {_face} is "a":
+			if {_turn} is "left":
+				if {_yaw} is between 135 and 180:
+					set {_pass} to true
+					exit loop
+				else if {_yaw} is between -180 and -135:
+					set {_pass} to true
+					exit loop
+			else if {_turn} is "right":
+				if {_yaw} is between -45 and 45:
+					set {_pass} to true
+					exit loop
+
+		else if {_face} is "s":
+			if {_turn} is "left":
+				if {_yaw} is between 45 and 135:
+					set {_pass} to true
+					exit loop
+			else if {_turn} is "right":
+				if {_yaw} is between -135 and -45:
+					set {_pass} to true
+					exit loop
+
+		else if {_face} is "d":
+			if {_turn} is "right":
+				if {_yaw} is between 135 and 180:
+					set {_pass} to true
+					exit loop
+				else if {_yaw} is between -180 and -135:
+					set {_pass} to true
+					exit loop
+			else if {_turn} is "left":
+				if {_yaw} is between -45 and 45:
+					set {_pass} to true
+					exit loop
+		
+		wait 1 tick
+	if {_pass} is true:
+		send title "&a &a" with subtitle "&aPass" to {actor} for 2 ticks with fade in 0 ticks and fade out 8 ticks
+		play sound "entity.wither.shoot" at volume 0.2 at pitch 2 to {actor}
+		play sound "entity.iron_golem.attack" at volume 0.2 at pitch 0.5 to {actor}
+	else:
+		miss()
+
+function deleteEntity(entity: entity):
+	wait 1 tick
+	loop all text displays:
+		loop-entity is {_entity}
+		delete loop-entity
+		exit loop

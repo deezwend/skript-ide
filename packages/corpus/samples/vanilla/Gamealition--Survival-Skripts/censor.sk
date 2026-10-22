@@ -1,0 +1,19 @@
+# ### Censor system by Roy Curtis
+# ### Licensed under MIT, 2015
+
+# ### Global variables
+# lastmessage.%player% - date; records when a new player's last message was
+
+on chat:
+    # Conditions
+    message contains "fuck" or "fukk" or "shit" or "bitch" or "nigga" or "nigger" or "cunt" or "asshole" or "bastard" or "dick" or "piss" or "slut" or "faggot"
+
+    if {lastmessage.%player%} is set:
+        message is equal to {lastmessage.%player%}
+        exit trigger
+
+    # Code
+    cancel the event
+    send "&c*** Are you sure you meant to say that?"
+    send "*** Blocked message '%message%' from %player%" to console
+    set {lastmessage.%player%} to message

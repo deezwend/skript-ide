@@ -1,0 +1,243 @@
+# Part - General Functions
+# https://github.com/ryanpeng69/mtskr/
+import:
+    java.io.File
+expression mtskr dir[ectory]:
+    get:
+        set {_dir} to "%current script%"
+        regex replace "(\\)?[^\\]+$" in {_dir} with "$1"
+        if {_dir} does not contain "mtskr":
+            set {_dir} to "%{_dir}%mtskr\"
+        return {_dir}
+expression mtskr config %string%:
+    get:
+        return (yaml value expr-1 of "MTskR.config")
+    set:
+        set yaml value expr-1 of "MTskR.config" to change value
+        save yaml "MTskR.config"
+plural expression mtskr configs:
+    get:
+        return "console_lang, model_maxium_blocks, tick_for_ride_train_detection, train_speed, door_move_ticks, fetch_model_frequency" split at ", "
+expression mtskr config default [value] (of|for) %string%:
+    get:
+        if expr-1 is "console_lang":
+            return "en_us"
+        else if expr-1 is "model_maxium_blocks":
+            return 1000
+        else if expr-1 is "tick_for_ride_train_detection":
+            return 1
+        else if expr-1 is "train_speed":
+            return 0.5
+        else if expr-1 is "door_move_ticks":
+            return 5
+        else if expr-1 is "fetch_model_frequency":
+            return 30
+        return
+effect (reset|fix) mtskr config:
+    trigger:
+        set the header of "MTskR.config" to ("MTskR config" and "https://github.com/ryanpeng69/mtskr/")
+        loop mtskr configs:
+            if mtskr config loop-value is not set:
+                set mtskr config loop-value to mtskr config default for loop-value
+effect (reload:[re]load|unload:unload) mtskr (:config|:data|language:lang[uage])[s] [(by|from) %sender%]:
+    trigger:
+        if parse tags contains "unload":
+            if parse tags contains "config":
+                unload yaml "MTskR.config"
+            else if parse tags contains "data":
+                loop all worlds:
+                    unload yaml "MTskR.data.rails.%loop-value%"
+                    unload yaml "MTskR.data.routes.%loop-value%"
+                    unload yaml "MTskR.data.signs.%loop-value%"
+            else if parse tags contains "language":
+                set {_javaDir} to new File("plugins\Skript\scripts\%{_dir}%lang\")
+                set {_array} to {_javaDir}.listFiles()
+                loop ...{_array}:
+                    set {_name} to loop-value.getName()
+                    regex replace "\.yml$" in {_name} with ""
+                    unload yaml "MTskR.lang.%{_name}%"
+        else:
+            set {_dir} to mtskr dir
+            if parse tags contains "config":
+                set {_config} to new File("plugins\Skript\scripts\%{_dir}%config.yml")
+                if {_config}.exists() is false:
+                    send formatted "[MTskR] &eConfig not found, created at plugins\Skript\scripts\%{_dir}%config.yml" to expr-1
+                load yaml "plugins\Skript\scripts\%{_dir}%config.yml" as "MTskR.config"
+                fix mtskr config
+                set {-MTskR::lang::CONSOLE} to best mtskr language for mtskr config "console_lang"
+            else if parse tags contains "data":
+                loop all worlds:
+                    load yaml "plugins\Skript\scripts\%{_dir}%data\rails\%loop-value%.yml" as "MTskR.data.rails.%loop-value%"
+                    load yaml "plugins\Skript\scripts\%{_dir}%data\routes\%loop-value%.yml" as "MTskR.data.routes.%loop-value%"
+                    load yaml "plugins\Skript\scripts\%{_dir}%data\signs\%loop-value%.yml" as "MTskR.data.signs.%loop-value%"
+            else if parse tags contains "language":
+                set {_javaDir} to new File("plugins\Skript\scripts\%{_dir}%lang\")
+                set {_array} to {_javaDir}.listFiles()
+                loop ...{_array}:
+                    set {_name} to loop-value.getName()
+                    regex replace "\.yml$" in {_name} with ""
+                    load yaml "%loop-value%" as "MTskR.lang.%{_name}%"
+        send formatted mtskr_message({-MTskR::lang::%expr-1%}, "functions.load.%last element of parse tags%.%first element of parse tags%") to expr-1
+expression: # yaw of direction %direction%
+    return type: integer
+    patterns:
+        yaw of direction %direction%
+        direction %direction%'s yaw
+    get:
+        if expr-1 is south:
+            return 0
+        if expr-1 is west:
+            return 90
+        else if expr-1 is north:
+            return 180
+        else if expr-1 is east:
+            return 270
+        else:
+            return
+expression closest quarter of %float%:
+    return type: integer
+    get:
+        set {_yaw} to (round(expr-1 / 90) * 90)
+        if {_yaw} is 360:
+            set {_yaw} to 0
+        return {_yaw}
+expression quarter clockwise direction of %-object%:
+    return type: direction
+    get:
+        if expr-1 is set:
+            if expr-1 is south or "south":
+                return west
+            else if expr-1 is west or "west":
+                return north
+            else if expr-1 is north or "north":
+                return east
+            else if expr-1 is east or "east":
+                return south
+        return
+expression mtskr [rail|track] color of %string%:
+    return type: color
+    get:
+        if expr-1 is "platform":
+            return red
+        else if expr-1 is "siding":
+            return yellow
+        else if expr-1 is "turnback":
+            return blue
+        else:
+            return white
+expression [the] best mtskr language (of|for) %-object%:
+    get:
+        if expr-1 is set:
+            if "%class of expr-1%" is "org.bukkit.craftbukkit.entity.CraftPlayer":
+                return best mtskr language for language of expr-1
+            else:
+                if yaml "MTskR.lang.%expr-1%" is loaded:
+                    return expr-1
+                else:
+                    loop all loaded yaml where [input starts with "MTskR.lang."]:
+                        set {_alternative} to yaml value "other_keys" of loop-value
+                        if {_alternative} split at ", " contains expr-1:
+                            set {_lang} to loop-value
+                            replace "MTskR.lang." in {_lang} with ""
+                            return {_lang}
+        return "en_us"
+effect nothing:
+    trigger:
+        set {_} to {_}
+effect [(make|force|let) %player%] go[ ]to [rail|track] [from|between] %string% [to|and] %string%:
+    trigger:
+        set {_l1v::*} to expr-2 parsed as "%integer%,%integer%,%integer%"
+        set {_l2v::*} to expr-3 parsed as "%integer%,%integer%,%integer%"
+        set {_yaw} to yaw of (vector from mtskr_nodeLoc(expr-2, world of expr-1) to mtskr_nodeLoc(expr-3, world of expr-1))
+        set {_loc} to middle of location(mean({_l1v::1}, {_l2v::1}), mean({_l1v::2}, {_l2v::2}), mean({_l1v::3}, {_l2v::3}), world of expr-1)
+        set yaw of {_loc} to {_yaw}
+        teleport expr-1 to {_loc}
+        play sound "entity.enderman.teleport" with seed 4096 to expr-1
+effect [mtskr] (bug [with|for]|send [[the] bug]|error [with|for]) [error] %string% [to %player%]:
+    trigger:
+        send formatted expr-1 to expr-2
+        play sound "entity.villager.no" with seed 0 to expr-2
+condition: # x and z is same
+    patterns:
+        %location%'s x[ ][and][ ]z is [(same:same as|different:different from)] %location%['s]
+        x[ ][and][ ]z of %location% is [(same:same as|different:different from)] %location%['s]
+        %locations%'[s] x[ ][and][ ]z are (same:same|different:different)
+        x[ ][and][ ]z of %locations% are (same:same|different:different)
+    check:
+        if expr-2 is set:
+            if:
+                x of expr-1 is x of expr-2
+                z of expr-1 is z of expr-2
+            then:
+                if parse tags contains "same":
+                    continue
+            else if parse tags contains "different":
+                continue
+        else:
+            loop exprs-1:
+                if {_x} is not set:
+                    set {_x} to x of loop-value
+                    set {_z} to z of loop-value
+                else:
+                    if x of loop-value is not {_x}:
+                        if parse tags contains "different":
+                            continue
+                    else if z of loop-value is not {_z}:
+                        if parse tags contains "different":
+                            continue
+                    else:
+                        if parse tags contains "same":
+                            continue
+condition %block% (is:is|not:is(n't| not)) [a] full collision block:
+    check:
+        set {_box} to expr-1.getCollisionShape().getBoundingBoxes().get(0)
+        if:
+            {_box}.getMinX() is 0
+            {_box}.getMinY() is 0
+            {_box}.getMinZ() is 0
+            {_box}.getMaxX() is 1
+            {_box}.getMaxY() is 1
+            {_box}.getMaxZ() is 1
+        then:
+            if parse tags contains "is":
+                continue
+        else if parse tags contains "not":
+            continue
+function mtskr_nodeString(loc: location) :: string:
+    return "%floor(x of {_loc})%,%floor(y of {_loc})%,%floor(z of {_loc})%"
+function mtskr_nodeLoc(string: string, world: world) :: location:
+    set {_v::*} to {_string} parsed as "%integer%,%integer%,%integer%"
+    return block at location({_v::1}, {_v::2}, {_v::3}, {_world})
+function mtskr_message(lang: string, key: string, replace: objects = "none", with: objects = "none") :: string:
+    if yaml "MTskR.lang.%{_lang}%" is not loaded:
+        set {_lang} to "en_us"
+    set {_string} to yaml value {_key} of "MTskR.lang.%{_lang}%"
+    if {_string} is not set:
+        set {_string} to yaml value {_key} of "MTskR.lang.en_us"
+    if {_replace::*} is not "none":
+        loop {_replace::*}:
+            add 1 to {_i}
+            set {_replace} to join "%%%loop-value%%%"
+            set {_with} to "%{_i}th element of {_with::*}%"
+            replace {_replace} with {_with} in {_string}
+    replace "%%nl%%" with nl in {_string}
+    regex replace "(?<!\\)\\n" with nl in {_string}
+    return {_string}
+function mtskr_removeRail(l1: string, l2: string, world: world):
+    set {_yaml} to "MTskR.data.rails.%{_world}%"
+    set {_type} to yaml value "%{_l1}%.%{_l2}%.type" of {_yaml}
+    if {_type} is "siding":
+        mtskr_stopRoute({_world}, "%{_l1}%.%{_l2}%")
+        set {_armorstands::*} to armor stands within mtskr_nodeLoc({_l1}, {_world}) and mtskr_nodeLoc({_l2}, {_world})
+        loop {_armorstands::*}:
+            if metadata tag "mtskr.train_id" of loop-value is set:
+                remove entity loop-value
+    if yaml node "%{_l1}%.%{_l2}%" of {_yaml} exists:
+        delete yaml value "%{_l1}%.%{_l2}%" of {_yaml}
+        if yaml node keys {_l1} of {_yaml} is not set:
+            delete yaml value {_l1} of {_yaml}
+    if yaml node "%{_l2}%.%{_l1}%" of {_yaml} exists:
+        delete yaml value "%{_l2}%.%{_l1}%" of {_yaml}
+        if yaml node keys {_l2} of {_yaml} is not set:
+            delete yaml value {_l2} of {_yaml}
+    save yaml {_yaml} without extra lines between nodes

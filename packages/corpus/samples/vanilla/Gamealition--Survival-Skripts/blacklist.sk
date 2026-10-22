@@ -1,0 +1,44 @@
+# ### Blacklist system by Roy Curtis
+# ### Licensed under MIT, 2016
+
+# ### Permission nodes
+# gamealition.lava - Can freely place lava
+# gamealition.tnt - Can freely place and ignite TNT
+
+on place of lava:
+    # Check for staff perms
+    player doesn't have permission "gamealition.moderator"
+    # Check for lava perms
+    player doesn't have permission "gamealition.lava"
+
+    # Logic
+    cancel the event
+    message "&c*** Sorry, you can't yet place lava without permission!"
+    message "  &cPlease ask to place lava using &3/modreq&c, e.g.:"
+    message "  &3/modreq please place lava in the stone pit here"
+
+# Prevent priming of TNT in the first place with a friendly message. Actual blocking of
+# TNT explosions and damage is handled by WorldGuard's per-world config.yml
+on right click:
+    # Conditions
+    world is "world_creative" or "world_buildathon" or "world_chaos"
+    player's held item is flint and steel
+
+    if clicked entity is tnt minecart:
+        set {_cancel} to true
+    else if clicked block is tnt:
+        set {_cancel} to true
+
+    if {_cancel} is true:
+        cancel the event
+        message "&c*** Sorry, you can't prime TNT in creative worlds!"
+
+on shoot:
+    # Conditions
+    shooter's held item is lingering_pot or splash_pot
+    shooter is a player
+    world is "world_creative" or "world_chaos" or "world_buildathon"
+    
+    # Logic
+    cancel the event
+    message "&c*** Sorry, you can't throw potions in creative worlds!" to shooter

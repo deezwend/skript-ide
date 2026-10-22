@@ -1,0 +1,360 @@
+options:
+    # ==================================================
+    # General
+    # ==================================================
+    prefix: &b[Server name] &8» &r
+
+    # ==================================================
+    # Permissions
+    # ==================================================
+    perm_protect: spiralyskript.chestprotect.protect
+    perm_unprotect: spiralyskript.chestprotect.unprotect
+    perm_chestadd: spiralyskript.chestprotect.chestadd
+    perm_chestremove: spiralyskript.chestprotect.chestremove
+    perm_chestsetting: spiralyskript.chestprotect.chestsetting
+    perm_chestlist: spiralyskript.chestprotect.chestlist
+    perm_cs_addplayer: spiralyskript.chestprotect.cs_addplayer
+    perm_breakcontainer: spiralyskript.chestprotect.breakcontainer
+    perm_chest: spiralyskript.chestprotect.chest
+    perm_guide: spiralyskript.chestprotect.guide
+
+    # ==================================================
+    # Messages
+    # ==================================================
+    msg_place: "{@prefix}&aYou placed a container. Use &b/protect &ato protect it."
+    msg_place_cooldown: "{@prefix}&cPlease wait before receiving a new message."
+    msg_protect_success: "{@prefix}&aContainer protected successfully! Use &b/unprotect &ato remove protection or &b/chestsetting &ato view settings."
+    msg_protect_already: "{@prefix}&cThis container is already protected."
+    msg_protect_notowner: "{@prefix}&cYou can only protect your own containers."
+    msg_unprotect_success: "{@prefix}&aContainer protection removed."
+    msg_unprotect_notprotected: "{@prefix}&eThis container is not protected!"
+    msg_unprotect_notowner: "{@prefix}&cYou can only remove protection from your own containers."
+    msg_add_success: "{@prefix}&aYou allowed &6%arg-1% &ato access this container."
+    msg_add_notprotected: "{@prefix}&cThis container is not protected!"
+    msg_add_notowner: "{@prefix}&cYou can only modify your own containers."
+    msg_remove_success: "{@prefix}&aYou removed access for &6%arg-1% &ato this container."
+    msg_remove_notprotected: "{@prefix}&cThis container is not protected!"
+    msg_remove_notowner: "{@prefix}&cYou can only modify your own containers."
+    msg_setting_notvalid: "{@prefix}&cYou must look at a valid container to access its settings."
+    msg_setting_notowner: "{@prefix}&cYou can only access your own containers."
+    msg_setting_notprotected: "{@prefix}&cThis container is not protected. Use &b/protect &cto protect it before managing settings."
+    msg_freeze_notice: "{@prefix}&cYou have been frozen by moderation."
+    msg_open_denied: "{@prefix}&cYou cannot open this container, it is protected and belongs to &6%{_ownerName}%&c."
+    msg_break_denied: "{@prefix}&cYou cannot destroy this container, it is protected and belongs to &6%{_ownerName}%&c."
+    msg_break_own: "{@prefix}&aYou destroyed your container and its protection has been removed."
+    msg_place_near: "{@prefix}&cYou cannot place a container near a protected container owned by &6%{_ownerName}%&c."
+    msg_guide_title: "&e== Container Protection Guide =="
+    msg_guide_protect: "&eProtection : &aYou cannot open or break protected containers of other players."
+    msg_guide_step1: "&aPlace a chest, shulker box, barrel or hopper."
+    msg_guide_protect_cmd: "&b/protect &a: Protect the targeted container."
+    msg_guide_unprotect_cmd: "&b/unprotect &a: Remove protection from the container."
+    msg_guide_add_cmd: "&b/chestadd [Player] &a: Allow a player to access the container."
+    msg_guide_remove_cmd: "&b/chestremove [Player] &a: Remove a player's access."
+    msg_guide_setting_cmd: "&b/chestsetting &a: Open container management menu."
+    msg_guide_list_cmd: "&b/chestlist &a: View allowed players list."
+    msg_guide_end: "&e===================================="
+
+on place of chest or shulker box or barrel or hopper:
+    set {chest-owner::%location of event-block%} to player's uuid
+    if {chest-message-cooldown::%player's uuid%} is not set:
+        send {@msg_place} to player
+        set {chest-message-cooldown::%player's uuid%} to true
+        wait 10 seconds
+        delete {chest-message-cooldown::%player's uuid%}
+
+command /protect:
+    permission: {@perm_protect}
+    trigger:
+        if targeted block is chest or shulker box or barrel or hopper:
+            if {chest-owner::%location of targeted block%} is not player's uuid:
+                send {@msg_protect_notowner} to player
+                stop
+            if {chest-protected::%location of targeted block%} is set:
+                send {@msg_protect_already} to player
+                stop
+            set {chest-protected::%location of targeted block%} to true
+            send {@msg_protect_success} to player
+        else:
+            send "{@prefix}&cYou are not looking at a valid container." to player
+
+command /unprotect:
+    permission: {@perm_unprotect}
+    trigger:
+        if targeted block is chest or shulker box or barrel or hopper:
+            if {chest-owner::%location of targeted block%} is not player's uuid:
+                send {@msg_unprotect_notowner} to player
+                stop
+            if {chest-protected::%location of targeted block%} is not set:
+                send {@msg_unprotect_notprotected} to player
+                stop
+            delete {chest-protected::%location of targeted block%}
+            delete {chest-access::%location of targeted block%::*}
+            send {@msg_unprotect_success} to player
+        else:
+            send "{@prefix}&cYou are not looking at a valid container." to player
+
+command /chestadd <offline player>:
+    permission: {@perm_chestadd}
+    trigger:
+        if targeted block is chest or shulker box or barrel or hopper:
+            if {chest-owner::%location of targeted block%} is not player's uuid:
+                send {@msg_add_notowner} to player
+                stop
+            if {chest-protected::%location of targeted block%} is not set:
+                send {@msg_add_notprotected} to player
+                stop
+            add arg-1's uuid to {chest-access::%location of targeted block%::*}
+            send {@msg_add_success} to player
+        else:
+            send "{@prefix}&cYou must look at a valid container." to player
+
+command /chestremove <offline player>:
+    permission: {@perm_chestremove}
+    trigger:
+        if targeted block is chest or shulker box or barrel or hopper:
+            if {chest-owner::%location of targeted block%} is not player's uuid:
+                send {@msg_remove_notowner} to player
+                stop
+            if {chest-protected::%location of targeted block%} is not set:
+                send {@msg_remove_notprotected} to player
+                stop
+            remove arg-1's uuid from {chest-access::%location of targeted block%::*}
+            send {@msg_remove_success} to player
+        else:
+            send "{@prefix}&cYou must look at a valid container." to player
+
+command /chestsetting:
+    permission: {@perm_chestsetting}
+    trigger:
+        if targeted block is chest or shulker box or barrel or hopper:
+            if {chest-owner::%location of targeted block%} is not player's uuid:
+                send {@msg_setting_notowner} to player
+                stop
+            if {chest-protected::%location of targeted block%} is not set:
+                send {@msg_setting_notprotected} to player
+                stop
+
+            create a gui with virtual chest inventory with 3 rows named "&9Container Settings":
+                make gui slot (integers from 0 to 26) with gray stained glass pane named "&7"
+
+                make gui slot 10 with player head named "&aAdd a player" with lore "&7Click to give%nl%&7access to a player.":
+                    execute player command "/cs_addplayer 1"
+
+                make gui slot 12 with book named "&eAllowed players list" with lore "&7Click to%nl%&7view the list.":
+                    execute player command "/chestlist 1"
+
+                make gui slot 14 with barrier named "&cRemove container protection" with lore "&7Click to remove%nl%&7the protection.":
+                    create a gui with virtual chest inventory with 3 rows named "&cConfirm removal ?":
+                        make gui slot (integers from 0 to 26) with gray stained glass pane named "&7"
+
+                        make gui slot 15 with red concrete named "&cCancel" with lore "&7Click to cancel and%nl%&7return to the previous menu.":
+                            close player's inventory
+                            execute player command "/chestsetting"
+
+                        make gui slot 11 with lime concrete named "&aConfirm removal" with lore "&7Click to remove%nl%&7the container protection.":
+                            delete {chest-protected::%location of targeted block%}
+                            delete {chest-access::%location of targeted block%::*}
+                            close player's inventory
+                            send "{@prefix}&aContainer protection has been removed."
+                    open last created gui to player
+
+                make gui slot 16 with paper named "&eManual guide" with lore "&7Add player : &b/chestadd [Player]%nl%&7Remove player : &b/chestremove [Player]%nl%&7Settings : &b/chestsetting"
+
+            open last created gui to player
+        else:
+            send {@msg_setting_notvalid} to player
+
+command /chestlist [<number>]:
+    permission: {@perm_chestlist}
+    trigger:
+        if targeted block is chest or shulker box or barrel or hopper:
+            if {chest-owner::%location of targeted block%} is not player's uuid:
+                send "{@prefix}&cYou can only view your own containers." to player
+                stop
+            if {chest-access::%location of targeted block%::*} is set:
+
+                if arg-1 is set:
+                    set {_page} to arg-1
+                else:
+                    set {_page} to 1
+
+                set {_perPage} to 45
+                set {_start} to ({_page} - 1) * {_perPage}
+                set {_end} to {_start} + {_perPage} - 1
+
+                create a gui with virtual chest inventory with 6 rows named "&eAllowed Players - Page %{_page}%":
+                    make gui slot (integers from 0 to 53) with gray stained glass pane named "&7"
+
+                    set {_slot} to 0
+                    set {_index} to 0
+                    loop {chest-access::%location of targeted block%::*}:
+                        if {_index} is between {_start} and {_end}:
+                            set {_uuid} to loop-value
+                            set {_name} to "Unknown"
+                            loop all offline players:
+                                if uuid of loop-offline player = {_uuid}:
+                                    set {_name} to loop-offline player
+                                    stop loop
+
+                            make gui slot {_slot} with skull of {_name} named "&a%{_name}%" with lore "&7Click to remove access":
+                                remove {_uuid} from {chest-access::%location of targeted block%::*}
+                                send "{@prefix}&cAccess removed for &6%{_name}%&c."
+                                close player's inventory
+                                execute player command "/chestlist %{_page}%"
+                            add 1 to {_slot}
+                        add 1 to {_index}
+
+                    make gui slot 49 with barrier named "&cBack" with lore "&7Return to settings":
+                        execute player command "/chestsetting"
+
+                    if {_page} > 1:
+                        make gui slot 45 with arrow named "&ePrevious page":
+                            set {_prev} to {_page} - 1
+                            execute player command "/chestlist %{_prev}%"
+
+                    make gui slot 53 with arrow named "&eNext page":
+                        set {_next} to {_page} + 1
+                        execute player command "/chestlist %{_next}%"
+
+                open last created gui to player
+
+            else:
+                send "{@prefix}&eNo allowed players for this container." to player
+        else:
+            send "{@prefix}&cYou must look at a valid container." to player
+
+command /cs_addplayer [<number>]:
+    permission: {@perm_cs_addplayer}
+    trigger:
+        if targeted block is chest or shulker box or barrel or hopper:
+            if {chest-owner::%location of targeted block%} is not player's uuid:
+                send "{@prefix}&cYou can only modify your own containers." to player
+                stop
+            if {chest-protected::%location of targeted block%} is not set:
+                send "{@prefix}&cThis container is not protected!" to player
+                stop
+
+            if arg-1 is set:
+                set {_page} to arg-1
+            else:
+                set {_page} to 1
+
+            set {_perPage} to 45
+            set {_start} to ({_page} - 1) * {_perPage}
+            set {_end} to {_start} + {_perPage} - 1
+
+            delete {_names::*}
+            loop all offline players:
+                add name of loop-offline player to {_names::*}
+            sort {_names::*}
+
+            create a gui with virtual chest inventory with 6 rows named "&aAdd/Remove player - Page %{_page}%":
+                make gui slot (integers from 0 to 53) with gray stained glass pane named "&7"
+
+                set {_slot} to 0
+                set {_index} to 0
+                loop {_names::*}:
+                    if {_index} is between {_start} and {_end}:
+                        set {_name} to loop-value parsed as offline player
+                        set {_uuid} to uuid of {_name}
+
+                        if {chest-access::%location of targeted block%::*} contains {_uuid}:
+                            make gui slot {_slot} with skull of {_name} named "&c%{_name}%" with lore "&7Already allowed%nl%&eClick to remove":
+                                remove {_uuid} from {chest-access::%location of targeted block%::*}
+                                send "{@prefix}&cYou removed access for &6%{_name}%&c." to player
+                                execute player command "/cs_addplayer %{_page}%"
+                        else:
+                            make gui slot {_slot} with player head named "&a%{_name}%" with lore "&7Not allowed yet%nl%&eClick to add":
+                                add {_uuid} to {chest-access::%location of targeted block%::*}
+                                send "{@prefix}&aYou allowed &6%{_name}% &ato access the container." to player
+                                execute player command "/cs_addplayer %{_page}%"
+
+                        add 1 to {_slot}
+                    add 1 to {_index}
+
+                make gui slot 49 with barrier named "&cBack" with lore "&7Return to settings":
+                    execute player command "/chestsetting"
+
+                if {_page} > 1:
+                    make gui slot 45 with arrow named "&ePrevious page":
+                        set {_prev} to {_page} - 1
+                        execute player command "/cs_addplayer %{_prev}%"
+
+                make gui slot 53 with arrow named "&eNext page":
+                    set {_next} to {_page} + 1
+                    execute player command "/cs_addplayer %{_next}%"
+
+            open last created gui to player
+        else:
+            send "{@prefix}&cYou must look at a valid container." to player
+
+on rightclick on chest or shulker box or barrel or hopper:
+    if {chest-protected::%location of event-block%} is set:
+        if {chest-owner::%location of event-block%} is not player's uuid:
+            if {chest-access::%location of event-block%::*} does not contain player's uuid:
+                cancel event
+                set {_ownerUUID} to {chest-owner::%location of event-block%}
+                set {_ownerName} to "Unknown"
+                loop all offline players:
+                    if loop-offline player's uuid is {_ownerUUID}:
+                        set {_ownerName} to loop-offline player
+                        stop loop
+                send {@msg_open_denied} to player
+
+on break of chest or shulker box or barrel or hopper:
+    if {chest-protected::%location of event-block%} is set:
+        if {chest-owner::%location of event-block%} is not player's uuid:
+            if player has permission {@perm_breakcontainer}:
+                delete {chest-owner::%location of event-block%}
+                delete {chest-protected::%location of event-block%}
+                delete {chest-access::%location of event-block%::*}
+            else:
+                cancel event
+                set {_ownerUUID} to {chest-owner::%location of event-block%}
+                set {_ownerName} to "Unknown"
+                loop all offline players:
+                    if loop-offline player's uuid is {_ownerUUID}:
+                        set {_ownerName} to loop-offline player
+                        stop loop
+                send {@msg_break_denied} to player
+        else:
+            delete {chest-owner::%location of event-block%}
+            delete {chest-protected::%location of event-block%}
+            delete {chest-access::%location of event-block%::*}
+            send {@msg_break_own} to player
+    else:
+        if {chest-owner::%location of event-block%} is player's uuid:
+            delete {chest-owner::%location of event-block%}
+        if player has permission {@perm_breakcontainer}:
+            delete {chest-owner::%location of event-block%}
+
+on place of chest or hopper:
+    if player has permission {@perm_chest}:
+        stop
+    loop blocks in radius 1 around event-block:
+        if loop-block is chest or shulker box or barrel or hopper:
+            if {chest-protected::%location of loop-block%} is set:
+                cancel event
+                set {_ownerUUID} to {chest-owner::%location of loop-block%}
+                set {_ownerName} to "Unknown"
+                loop all offline players:
+                    if loop-offline player's uuid is {_ownerUUID}:
+                        set {_ownerName} to loop-offline player
+                        stop loop
+                send {@msg_place_near} to player
+                stop
+
+command /chestprotect:
+    permission: {@perm_guide}
+    trigger:
+        send ""
+        send {@msg_guide_title}
+        send {@msg_guide_protect}
+        send {@msg_guide_step1}
+        send {@msg_guide_protect_cmd}
+        send {@msg_guide_unprotect_cmd}
+        send {@msg_guide_add_cmd}
+        send {@msg_guide_remove_cmd}
+        send {@msg_guide_setting_cmd}
+        send {@msg_guide_list_cmd}
+        send {@msg_guide_end}

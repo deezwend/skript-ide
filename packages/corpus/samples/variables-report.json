@@ -1,0 +1,648 @@
+{
+  "skriptVersion": "2.17.1",
+  "files": 79,
+  "variableUses": 6949,
+  "counts": {
+    "variable-unread": 8,
+    "variable-unwritten": 78,
+    "variable-local-scope": 2,
+    "variable-typo": 1
+  },
+  "findings": [
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/core/core.sk",
+      "line": 97,
+      "code": "variable-unread",
+      "message": "{_currencies} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_currencies} to metadata value \"MG.SK|money|currencylist\" of getDummy()"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/core/core.sk",
+      "line": 101,
+      "code": "variable-unread",
+      "message": "{_pointslist} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_pointslist} to metadata value \"MG.SK|points|pointslist\" of getDummy()"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/games/Trainmasters/strain.sk",
+      "line": 195,
+      "code": "variable-unwritten",
+      "message": "{MG::Trainmasters::chances::*} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "loop {MG::Trainmasters::chances::*}:"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/games/Trainmasters/strain.sk",
+      "line": 198,
+      "code": "variable-unwritten",
+      "message": "{MG::Trainmasters::actions::%loop-index%} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "mgTrainmastersCreateResource({MG::Trainmasters::actions::%loop-index%},loop-number-1 + {_startx},{_endz} + loop-number-2)"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/games/Trainmasters/strain.sk",
+      "line": 224,
+      "code": "variable-unwritten",
+      "message": "{MG::Trainmasters::floorchances::*} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "loop {MG::Trainmasters::floorchances::*}:"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/games/Trainmasters/strain.sk",
+      "line": 228,
+      "code": "variable-unwritten",
+      "message": "{MG::Trainmasters::floorblocks::%loop-index%} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set {_block} to {MG::Trainmasters::floorblocks::%loop-index%}"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/games/Trainmasters/strain.sk",
+      "line": 244,
+      "code": "variable-unwritten",
+      "message": "{MG::Trainmasters::hillchances::*} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "loop {MG::Trainmasters::hillchances::*}:"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/games/Trainmasters/strain.sk",
+      "line": 248,
+      "code": "variable-unwritten",
+      "message": "{MG::Trainmasters::hillblocks::%loop-index%} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set loop-block to {MG::Trainmasters::hillblocks::%loop-index%}"
+    },
+    {
+      "path": "addons/Abwasserrohr--MINIGAMES.SK/MINIGAMES.SK/games/Trainmasters/strain.sk",
+      "line": 756,
+      "code": "variable-unread",
+      "message": "{_endit} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_endit} to true"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/judge.sk",
+      "line": 11,
+      "code": "variable-unwritten",
+      "message": "{editMode} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "{editMode} is not set"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/judge.sk",
+      "line": 50,
+      "code": "variable-unwritten",
+      "message": "{_ent1} okunuyor ama hiçbir yerde değer atanmıyor (bu tetikleyicide).",
+      "text": "set metadata value \"belongsto\" of the entity to uuid of {_ent1}"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/judge.sk",
+      "line": 86,
+      "code": "variable-unread",
+      "message": "{_type} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_type} to {-onstage::%{_index}%::type}"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/judge.sk",
+      "line": 115,
+      "code": "variable-unwritten",
+      "message": "{_ent1} okunuyor ama hiçbir yerde değer atanmıyor (bu tetikleyicide).",
+      "text": "set metadata value \"belongsto\" of the entity to uuid of {_ent1}"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/main.sk",
+      "line": 105,
+      "code": "variable-unwritten",
+      "message": "{-loaded} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "{-loaded} is set"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/main.sk",
+      "line": 190,
+      "code": "variable-unwritten",
+      "message": "{editMode} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "if {editMode} is true:"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/main.sk",
+      "line": 239,
+      "code": "variable-unwritten",
+      "message": "{song} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "send title \"&f%{song}%\" with subtitle \"&8曲: &7%{artist}% &8· 谱: &7%{author}%\" to {actor} for 1 second with fade in 0.5 seconds and fade out 0.5 seconds"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/main.sk",
+      "line": 239,
+      "code": "variable-unwritten",
+      "message": "{artist} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "send title \"&f%{song}%\" with subtitle \"&8曲: &7%{artist}% &8· 谱: &7%{author}%\" to {actor} for 1 second with fade in 0.5 seconds and fade out 0.5 seconds"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/main.sk",
+      "line": 239,
+      "code": "variable-unwritten",
+      "message": "{author} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "send title \"&f%{song}%\" with subtitle \"&8曲: &7%{artist}% &8· 谱: &7%{author}%\" to {actor} for 1 second with fade in 0.5 seconds and fade out 0.5 seconds"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/main.sk",
+      "line": 249,
+      "code": "variable-unwritten",
+      "message": "{path} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set {_preload} to preload({path})"
+    },
+    {
+      "path": "addons/EroslonDusk--CubeRhythm2/main.sk",
+      "line": 318,
+      "code": "variable-unwritten",
+      "message": "{level} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "if {level} is set:"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/broken_portals.sk",
+      "line": 16,
+      "code": "variable-local-scope",
+      "message": "{_rg%{_x}%} yerel bir değişken; yalnızca olay, komut ya da fonksiyon gövdesinde anlamlıdır.",
+      "text": "draw 250 of flame particle using dustOption(purple, 3) at {_rg%{_x}%} with offset vector(2.5,2.5,2.5) with extra 0"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/broken_portals.sk",
+      "line": 16,
+      "code": "variable-local-scope",
+      "message": "{_x} yerel bir değişken; yalnızca olay, komut ya da fonksiyon gövdesinde anlamlıdır.",
+      "text": "draw 250 of flame particle using dustOption(purple, 3) at {_rg%{_x}%} with offset vector(2.5,2.5,2.5) with extra 0"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/main_server_core.sk",
+      "line": 146,
+      "code": "variable-unwritten",
+      "message": "{_p} okunuyor ama hiçbir yerde değer atanmıyor (bu tetikleyicide).",
+      "text": "else if {PerkOwned.%uuid of {_p}%::FlightI} is true:"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/old_quests.sk",
+      "line": 50,
+      "code": "variable-unwritten",
+      "message": "{comletedNPC::%uuid of player%::CaveMiner} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "if {comletedNPC::%uuid of player%::CaveMiner} is true"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/old_quests.sk",
+      "line": 65,
+      "code": "variable-unwritten",
+      "message": "{Astronaut::%uuid of player%::1} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "if {Astronaut::%uuid of player%::1} is flase"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/shulker_menu.sk",
+      "line": 225,
+      "code": "variable-unread",
+      "message": "{_item} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_item} to metadata \"BSB;ShulkerSlot\" of victim"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/shulker_menu.sk",
+      "line": 226,
+      "code": "variable-unread",
+      "message": "{_items::*} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_items::*} to slots (integers between 0 and 26) of victim's current inventory"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/SystemCore.sk",
+      "line": 106,
+      "code": "variable-unwritten",
+      "message": "{argument 1} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "send \"&7Gave %{argument 1}% %{argument 2}% Tokens!\" to player"
+    },
+    {
+      "path": "addons/nerd-bear--skripts/SystemCore.sk",
+      "line": 106,
+      "code": "variable-unwritten",
+      "message": "{argument 2} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "send \"&7Gave %{argument 1}% %{argument 2}% Tokens!\" to player"
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/borken_dungeons.sk",
+      "line": 6,
+      "code": "variable-unwritten",
+      "message": "{dungeon lobbies::*} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "loop {dungeon lobbies::*}:"
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/borken_dungeons.sk",
+      "line": 7,
+      "code": "variable-unwritten",
+      "message": "{dungeon lobbies::%loop-index%::icon} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set {_dungeon_item} to {dungeon lobbies::%loop-index%::icon} named {dungeon lobbies::%loop-index%::name}"
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/borken_dungeons.sk",
+      "line": 7,
+      "code": "variable-unwritten",
+      "message": "{dungeon lobbies::%loop-index%::name} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set {_dungeon_item} to {dungeon lobbies::%loop-index%::icon} named {dungeon lobbies::%loop-index%::name}"
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/borken_dungeons.sk",
+      "line": 22,
+      "code": "variable-unwritten",
+      "message": "{dungeon lobbies::%{_player}%::*} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "loop {dungeon lobbies::%{_player}%::*}:"
+    },
+    {
+      "path": "vanilla/nerd-bear--skripts/borken_dungeons.sk",
+      "line": 23,
+      "code": "variable-unwritten",
+      "message": "{dungeon lobbies::%{_player}%::item} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "add {dungeon lobbies::%{_player}%::item} to {_creator_gui}"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 6,
+      "code": "variable-unwritten",
+      "message": "{Bukkit} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set {apis::gp} to {Bukkit}.getPluginManager().getPlugin(\"GriefPrevention\")"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 21,
+      "code": "variable-unwritten",
+      "message": "{uuid::%arg-1%} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set {_uuid} to {uuid::%arg-1%}"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 22,
+      "code": "variable-unwritten",
+      "message": "{uuidName::%{_uuid}%} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set {_name} to {uuidName::%{_uuid}%}"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 184,
+      "code": "variable-unwritten",
+      "message": "{item::acaciawood} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "format slot 12 of player with 1 of {item::acaciawood} named \"&fAcacia Wood\" to run [make player execute command \"/wildshop blocks acaciawood\"]"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 185,
+      "code": "variable-unwritten",
+      "message": "{item::darkoakwood} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "format slot 13 of player with 1 of {item::darkoakwood} named \"&fDark Oak Wood\" to run [make player execute command \"/wildshop blocks darkoakwood\"]"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 594,
+      "code": "variable-unread",
+      "message": "{_bal} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_bal} to player's balance"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 601,
+      "code": "variable-unread",
+      "message": "{_arg-2} değer alıyor ama bu tetikleyicide hiç okunmuyor.",
+      "text": "set {_arg-2} to arg-2"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 1218,
+      "code": "variable-unwritten",
+      "message": "{item::quartzpillar} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set metadata \"shop.item\" of player to 1 of {item::quartzpillar}"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 1335,
+      "code": "variable-unwritten",
+      "message": "{item::prismarinebrick} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set metadata \"shop.item\" of player to 1 of {item::prismarinebrick}"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 1390,
+      "code": "variable-unwritten",
+      "message": "{item::redsandstoneslab} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set metadata \"shop.item\" of player to 1 of {item::redsandstoneslab}"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 1410,
+      "code": "variable-unwritten",
+      "message": "{item::purpurslab} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set metadata \"shop.item\" of player to 1 of {item::purpurslab}"
+    },
+    {
+      "path": "addons/Plutoren--SnapMc/wilderness.sk",
+      "line": 1425,
+      "code": "variable-unwritten",
+      "message": "{item::netherwartblock} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set metadata \"shop.item\" of player to 1 of {item::netherwartblock}"
+    },
+    {
+      "path": "vanilla/Plutoren--SnapMc/quests.sk",
+      "line": 4,
+      "code": "variable-unwritten",
+      "message": "{prison.level::%uuid of arg-1%} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "if {prison.level::%uuid of arg-1%} < arg-2:"
+    },
+    {
+      "path": "addons/ryanpeng69--mtskr/mtskr/mtskr.main.sk",
+      "line": 227,
+      "code": "variable-unwritten",
+      "message": "{_lv} okunuyor ama hiçbir yerde değer atanmıyor (bu tetikleyicide).",
+      "text": "set yaml value \"%{_node}%.siding.train\" of {_yaml} to {_lv}"
+    },
+    {
+      "path": "addons/ryanpeng69--mtskr/mtskr/mtskr.main.sk",
+      "line": 229,
+      "code": "variable-unwritten",
+      "message": "{_expr-3} okunuyor ama hiçbir yerde değer atanmıyor (bu tetikleyicide).",
+      "text": "update train for siding {_node} in world {_expr-3}"
+    },
+    {
+      "path": "addons/ryanpeng69--mtskr/mtskr/mtskr.main.sk",
+      "line": 284,
+      "code": "variable-typo",
+      "message": "{_time} hiç yazılmadan okunuyor; şunu mu demek istedin: {_times}?",
+      "text": "set yaml value \"%{_node}%.platform.stop_time\" of {_yaml} to {_time}"
+    },
+    {
+      "path": "addons/ryanpeng69--mtskr/mtskr/mtskr.main.sk",
+      "line": 296,
+      "code": "variable-unwritten",
+      "message": "{-MTskR::siding::%{_world}%::%{_node}%::running::*} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "if {-MTskR::siding::%{_world}%::%{_node}%::running::*} contains true:"
+    },
+    {
+      "path": "addons/SilverCore-Git--SilverSK/Skript/scripts/SilverSK_V1.0.0/anticheat/anticheat.sk",
+      "line": 14,
+      "code": "variable-unwritten",
+      "message": "{blacklist::*} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "send \"Black list player : %{blacklist::*}%\" to console"
+    },
+    {
+      "path": "vanilla/Spiralyfox--skripts-for-minecraft/Skripts/AntiAFK_cmd/AntiAFK_en.sk",
+      "line": 59,
+      "code": "variable-unwritten",
+      "message": "{battle-%loop-player's uuid%-in} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "if {battle-%loop-player's uuid%-in} is not set:"
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 29,
+      "code": "variable-unwritten",
+      "message": "{price.sell.leather} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 19 of player's current inventory to leather named \"&d[$%{price.sell.leather}%] &r革を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 30,
+      "code": "variable-unwritten",
+      "message": "{price.sell.iron} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 21 of player's current inventory to iron ingot named \"&d[$%{price.sell.iron}%] &r鉄鉱石を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 31,
+      "code": "variable-unwritten",
+      "message": "{price.sell.gold} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 23 of player's current inventory to gold ingot named \"&d[$%{price.sell.gold}%] &r金鉱石を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 32,
+      "code": "variable-unwritten",
+      "message": "{price.sell.diamond} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 25 of player's current inventory to diamond named \"&d[$%{price.sell.diamond}%] &rダイヤモンドを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 34,
+      "code": "variable-unwritten",
+      "message": "{price.sell.planks} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 28 of player's current inventory to oak planks named \"&d[$%{price.sell.planks}%] &r木材を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 35,
+      "code": "variable-unwritten",
+      "message": "{price.sell.stone} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 30 of player's current inventory to stone named \"&d[$%{price.sell.stone}%] &r石材を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 36,
+      "code": "variable-unwritten",
+      "message": "{price.sell.string} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 32 of player's current inventory to string named \"&d[$%{price.sell.string}%] &r糸を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 37,
+      "code": "variable-unwritten",
+      "message": "{price.sell.arrow} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 34 of player's current inventory to arrow named \"&d[$%{price.sell.arrow}%] &r矢を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 39,
+      "code": "variable-unwritten",
+      "message": "{price.sell.apple} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 37 of player's current inventory to apple named \"&d[$%{price.sell.apple}%] &rりんごを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 40,
+      "code": "variable-unwritten",
+      "message": "{price.sell.firework} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 39 of player's current inventory to firework rocket named \"&d[$%{price.sell.firework}%] &rロケット花火を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 41,
+      "code": "variable-unwritten",
+      "message": "{price.sell.lapis} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 41 of player's current inventory to lapis lazuli named \"&d[$%{price.sell.lapis}%] &rラピスラズリを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 42,
+      "code": "variable-unwritten",
+      "message": "{price.sell.enchant} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 43 of player's current inventory to experience bottle named \"&d[$%{price.sell.enchant}%] &rエンチャント瓶を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 220,
+      "code": "variable-unwritten",
+      "message": "{price.sell.leather_helmet} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 19 of player's current inventory to leather helmet named \"&d[$%{price.sell.leather_helmet}%] &r革の帽子を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 221,
+      "code": "variable-unwritten",
+      "message": "{price.sell.leather_chestplate} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 21 of player's current inventory to leather chestplate named \"&d[$%{price.sell.leather_chestplate}%] &r革の上着を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 222,
+      "code": "variable-unwritten",
+      "message": "{price.sell.leather_leggings} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 23 of player's current inventory to leather leggings named \"&d[$%{price.sell.leather_leggings}%] &r革のズボンを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 223,
+      "code": "variable-unwritten",
+      "message": "{price.sell.leather_boots} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 25 of player's current inventory to leather boots named \"&d[$%{price.sell.leather_boots}%] &r革のブーツを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 225,
+      "code": "variable-unwritten",
+      "message": "{price.sell.iron_helmet} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 28 of player's current inventory to iron helmet named \"&d[$%{price.sell.iron_helmet}%] &r鉄のヘルメットを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 226,
+      "code": "variable-unwritten",
+      "message": "{price.sell.iron_chestplate} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 30 of player's current inventory to iron chestplate named \"&d[$%{price.sell.iron_chestplate}%] &r鉄のチェストプレートを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 227,
+      "code": "variable-unwritten",
+      "message": "{price.sell.iron_leggings} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 32 of player's current inventory to iron leggings named \"&d[$%{price.sell.iron_leggings}%] &r鉄のレギンスを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 228,
+      "code": "variable-unwritten",
+      "message": "{price.sell.iron_boots} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 34 of player's current inventory to iron boots named \"&d[$%{price.sell.iron_boots}%] &r鉄のブーツを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 230,
+      "code": "variable-unwritten",
+      "message": "{price.sell.golden_helmet} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 37 of player's current inventory to golden helmet named \"&d[$%{price.sell.golden_helmet}%] &r金のヘルメットを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 231,
+      "code": "variable-unwritten",
+      "message": "{price.sell.golden_chestplate} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 39 of player's current inventory to golden chestplate named \"&d[$%{price.sell.golden_chestplate}%] &r金のチェストプレートを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 232,
+      "code": "variable-unwritten",
+      "message": "{price.sell.golden_leggings} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 41 of player's current inventory to golden leggings named \"&d[$%{price.sell.golden_leggings}%] &r金のレギンスを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 233,
+      "code": "variable-unwritten",
+      "message": "{price.sell.golden_boots} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 43 of player's current inventory to golden boots named \"&d[$%{price.sell.golden_boots}%] &r金のブーツを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 235,
+      "code": "variable-unwritten",
+      "message": "{price.sell.diamond_helmet} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 46 of player's current inventory to diamond helmet named \"&d[$%{price.sell.diamond_helmet}%] &rダイヤモンドのヘルメットを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 236,
+      "code": "variable-unwritten",
+      "message": "{price.sell.diamond_chestplate} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 48 of player's current inventory to diamond chestplate named \"&d[$%{price.sell.diamond_chestplate}%] &rダイヤモンドのチェストプレートを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 237,
+      "code": "variable-unwritten",
+      "message": "{price.sell.diamond_leggings} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 50 of player's current inventory to diamond leggings named \"&d[$%{price.sell.diamond_leggings}%] &rダイヤモンドのレギンスを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 238,
+      "code": "variable-unwritten",
+      "message": "{price.sell.diamond_boots} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 52 of player's current inventory to diamond boots named \"&d[$%{price.sell.diamond_boots}%] &rダイヤモンドのブーツを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 422,
+      "code": "variable-unwritten",
+      "message": "{price.sell.wooden_sword} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 19 of player's current inventory to wooden sword named \"&d[$%{price.sell.wooden_sword}%] &r木の剣を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 423,
+      "code": "variable-unwritten",
+      "message": "{price.sell.stone_sword} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 21 of player's current inventory to stone sword named \"&d[$%{price.sell.stone_sword}%] &r石の剣を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 424,
+      "code": "variable-unwritten",
+      "message": "{price.sell.iron_sword} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 23 of player's current inventory to iron sword named \"&d[$%{price.sell.iron_sword}%] &r鉄の剣を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 425,
+      "code": "variable-unwritten",
+      "message": "{price.sell.golden_sword} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 25 of player's current inventory to golden sword named \"&d[$%{price.sell.golden_sword}%] &r金の剣を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 427,
+      "code": "variable-unwritten",
+      "message": "{price.sell.diamond_sword} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 28 of player's current inventory to diamond sword named \"&d[$%{price.sell.diamond_sword}%] &rダイヤモンドの剣を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 428,
+      "code": "variable-unwritten",
+      "message": "{price.sell.bow} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 30 of player's current inventory to bow named \"&d[$%{price.sell.bow}%] &r弓を売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 429,
+      "code": "variable-unwritten",
+      "message": "{price.sell.crossbow} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 32 of player's current inventory to crossbow named \"&d[$%{price.sell.crossbow}%] &rクロスボウを売る\""
+    },
+    {
+      "path": "addons/sttnbnb--Wikipedico/plugin/src/main/resources/scripts/shop/shop_sell.sk",
+      "line": 430,
+      "code": "variable-unwritten",
+      "message": "{price.sell.elytra} okunuyor ama hiçbir yerde değer atanmıyor.",
+      "text": "set slot 34 of player's current inventory to elytra named \"&d[$%{price.sell.elytra}%] &rエリトラを売る\""
+    }
+  ],
+  "review": {
+    "date": "2026-10-22",
+    "scope": "Yerel değişken uyarıları (local-scope, typo, unread, yerel unwritten) elle incelendi. Genel değişken unwritten (bilgi düzeyi) ölçülmedi: corpus depoları eksik, ayarlayan dosyalar çoğunlukla corpus dışında.",
+    "localFindings": 16,
+    "truePositives": 16,
+    "falsePositives": 0,
+    "notes": [
+      "mtskr.main.sk:284 {_time}: gerçek hata ({_stop_time} kastedilmiş), ancak öneri {_times}; öneri isabetsiz.",
+      "broken_portals.sk:16: tetikleyici dışında kalmış bozuk satır; doğru uyarı.",
+      "Düzeltme öncesi ~21 yanlış pozitif vardı: delete bölgesi, {_x}'s özellik ataması, seçenek değerindeki değişkenler, liste parametreleri, kullanılmayan parametreler, adlandırılmış komut argümanları; hepsi giderildi."
+    ]
+  }
+}

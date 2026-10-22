@@ -1,0 +1,107 @@
+# ==================================================
+# Script made by Spiralyfox
+# Discord : @Spiralyfox
+# Script ideas ? Need a specific Skript ?
+# Contact me on Discord to contribute to the community.
+# ==================================================
+
+options:
+    # ==================================================
+    # General
+    # ==================================================
+    prefix: &b[Server name] &8» &r
+    gui_name: &9Return to death location
+
+    # ==================================================
+    # Cooldown
+    # ==================================================
+    back_cooldown: 240
+
+    # ==================================================
+    # Messages
+    # ==================================================
+    msg_no_death: &7No recent death
+    msg_death_info: &7Last death :%nl%&a%{_world}%%nl%&7- &aX: %{_x}%%nl%&7- &aY: %{_y}%%nl%&7- &aZ: %{_z}%
+    msg_tp_success: &aYou have been teleported to your last death location.
+    msg_death_notify: &7You can use &a/back &7to return to your last death location.
+    msg_no_player: &cYou must specify a player name.
+    msg_no_death_player: &cPlayer %arg-1% has no recorded death location.
+    msg_tp_player: &aYou have been teleported to %arg-1%'s last death location.
+
+    # ==================================================
+    # Permissions
+    # ==================================================
+    perm_back: spiralyskript.back.back
+    perm_back_bypass: spiralyskript.back.bypass
+    perm_backplayer: spiralyskript.back.backplayer
+
+command /back:
+    permission: {@perm_back}
+    trigger:
+        create a gui with virtual chest inventory with 1 row named "{@gui_name}":
+            make gui slot (integers from 0 to 8) with gray stained glass pane named "&a"
+
+            if {death-location.%player's uuid%} is not set:
+                set {_coords} to "{@msg_no_death}"
+            else:
+                set {_location} to {death-location.%player's uuid%}
+                set {_world} to world of {_location}
+                set {_x} to x-coordinate of {_location}
+                set {_y} to y-coordinate of {_location}
+                set {_z} to z-coordinate of {_location}
+                set {_coords} to "{@msg_death_info}"
+
+            make gui slot 2 with paper named "&bView coordinates" with lore {_coords}
+
+            if player has permission {@perm_back_bypass}:
+                make gui slot 6 with ender pearl named "&aTeleportation" with lore "&7Click to teleport to%nl%&7your last death location":
+                    teleport player to {death-location.%player's uuid%}
+                    send "{@prefix}{@msg_tp_success}"
+            else:
+                if {back-cooldown.%player's uuid%} is set:
+                    set {_cooldown_time} to {back-cooldown.%player's uuid%}
+                    make gui slot 4 with red wool named "&cTeleportation unavailable" with lore "&7Time remaining : %{_cooldown_time}% seconds."
+                else:
+                    make gui slot 4 with green wool named "&aTeleportation available" with lore "&7Click to teleport to%nl%&7your last death location":
+                        set {back-cooldown.%player's uuid%} to {@back_cooldown}
+                        teleport player to {death-location.%player's uuid%}
+                        send "{@prefix}{@msg_tp_success}"
+                        loop 700 times:
+                            if {back-cooldown.%player's uuid%} is set:
+                                if {back-cooldown.%player's uuid%} < 1:
+                                    delete {back-cooldown.%player's uuid%}
+                                    stop
+                                else:
+                                    subtract 1 from {back-cooldown.%player's uuid%}
+                                    wait 1 second
+
+                make gui slot 6 with diamond named "&bDonator" with lore "&aWith the rank &6Donator&a,%nl%&ayou can use &2/back%nl%&awithout cooldown."
+
+        open last created gui to player
+
+on inventory click:
+    if name of event-inventory is "{@gui_name}":
+        cancel event
+
+on death of player:
+    set {death-location.%victim's uuid%} to location of victim
+    send "{@prefix}{@msg_death_notify}" to victim
+
+command /backplayer <offlineplayer>:
+    permission: {@perm_backplayer}
+    usage: {@prefix}To teleport to a player's death location, use &a/backplayer <player name>&r.
+    trigger:
+        if arg-1 is not set:
+            send "{@prefix}{@msg_no_player}"
+        else if {death-location.%arg-1's uuid%} is not set:
+            send "{@prefix}{@msg_no_death_player}"
+        else:
+            teleport player to {death-location.%arg-1's uuid%}
+            send "{@prefix}{@msg_tp_player}"
+
+on tab complete:
+    event-string is "/backplayer"
+    loop all offline players:
+        if {death-location.%loop-offline player's uuid%} is set:
+            add loop-offline player to {_players-with-death-locations::*}
+    set tab completions for position 1 to {_players-with-death-locations::*}

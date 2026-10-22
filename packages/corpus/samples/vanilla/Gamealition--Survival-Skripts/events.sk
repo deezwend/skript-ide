@@ -1,0 +1,161 @@
+# ########################################################################################
+# # WORLD ################################################################################
+# ########################################################################################
+
+# Horse location script
+# every second:
+#     loop entities of type horse:
+#         loop-horse's name is "Persnickety"
+#         message "Persnickety found at %loop-horse's location%" to console
+
+# Prolong daytime in world by 2x
+every 8 seconds:
+    time in "world" is between 06:30 and 17:30
+    remove 4 seconds from "world"'s time
+
+# Horse immunity
+on damage of horse or donkey or mule or skeleton horse or llama:
+    damage cause is suffocation
+    cancel the event
+
+# Wolf monitoring
+on damage of wolf or ocelot:
+    send "*** %victim% damage: %damage cause%, %location of victim%, %attacker%. Nearby players:" to console
+    loop all players within 25 meters of location of victim:
+        send "--> %loop-player%" to console
+
+# Kill any straggling trap horses
+on spawn of a skeleton:
+    world is "world"
+    wait 1 tick
+    vehicle of the entity is a skeleton horse
+
+    kill the entity's vehicle
+    kill the entity
+
+# Disable frost walker in overworld
+on form:
+    item is frosted ice
+    world is "world" or "world_nether" or "world_the_end"
+    cancel the event
+
+# Mob riding
+on rightclick on a creature:
+    creature is not a horse
+    player is sneaking
+    player is op
+    wait 0.2 second
+    make player ride creature
+
+on rightclick on a mob spawner:
+    player is holding a spawn egg
+    message "&7*** Adjustment of spawners is disabled on this server"
+    cancel the event
+
+# Track creative items
+on drop:
+    player's gamemode is creative
+    set the 1st line of the item's lore to "&4&lSPAWNED IN"
+    set the 2nd line of the item's lore to "&4&lCREATIVE MODE"
+
+# /lock tutorial
+on place of chest or trapped chest:
+    {lwctutorial.%player%} is not set
+    set {lwctutorial.%player%} to true
+    console command "/playsound entity.player.levelup neutral %player% ~ ~ ~ 1 1 1"
+    message "*** Just so you know, you can lock that chest! That will protect its contents from theft. To do so, type. . ."
+    message "* &3/lock&f and punch a chest to lock it"
+    message "* &3/unlock&f to remove the lock"
+    message "* &3/cmodify name&f to allow someone else to access it"
+    message "* &3/chopper on&f to allow hoppers to work with the chest"
+    message "* &3/lwc mode persist&f and then &3/lock&f to lock many chests without needing to repeat the command"
+    message "&7*** You will only see this tutorial once"
+
+# Fix for server crash when entering end portals in non-end worlds.
+# MV-NetherPortals is supposed to be handling this, but appears to have broken for 1.9
+on portal:
+    player's world is "world_creative" or "world_chaos" or "world_derpi" or "world_buildathon"
+    cancel the event
+    console command "/mvtp %player% a:%player's world%"
+
+on right click on bed:
+    player's world is "world_creative" or "world_buildathon"
+    cancel the event
+    message "&c*** You cannot sleep in creative worlds"
+
+# Allow the dropping of anvils from mid-air
+# on player drop of anvil:
+#     world is "world_creative"
+#     block at dropped item is air
+#     delete the dropped item
+#     set block at dropped item to anvil
+
+# ########################################################################################
+# # COMMAND OVERRIDES ####################################################################
+# ########################################################################################
+
+# Multiverse's spawn points are buggy, so we rewire them to anchors
+on command:
+    command is "mvss" or "mvsetspawn"
+    player command "/mv anchor %player's world%"
+    player command "/setworldspawn"
+
+on command:
+    command is "mv" or "mvm"
+    arguments is "set spawn" or "setspawn"
+    player command "/mv anchor %player's world%"
+    player command "/setworldspawn"
+
+on command:
+    command is "mvs" or "mvspawn"
+    player has permission "multiverse.core.spawn.self"
+    message "&7*** Teleporting you to spawn point of &f%player's world%"
+    console command "/mvtp %player% a:%player's world%"
+    cancel the event
+
+on command "op":
+    player doesn't have permission "gamealition.admin"
+    console command "/kick %player% *taps with wand* you are now an OP, %player%"
+    cancel the event
+
+# Workaround for DiscordSRV's lack of /me support
+on command "me":
+    player has permission "essentials.me"
+    console command "/discord bcast _%player% %arguments%_"
+
+# ########################################################################################
+# # SERVER ###############################################################################
+# ########################################################################################
+
+# Daily restarts & PRISM purges
+# Very hacky, but Skript is limited with IRL date/time...
+every minute:
+    if "%now%" contains "06:00":
+        # Some of PRISM's purge rules seem to be broken, so we manually purge noisy events here
+        console command "/pr delete a:kill p:fire_tick e:guardian e:skeleton e:zombie"
+    else if "%now%" contains "07:55":
+        broadcast "&l*** &7Server will perform its daily restart in &ffive minutes&7"
+    else if "%now%" contains "07:59":
+        broadcast "&l*** &7Server will perform its daily restart in &fone minute&7"
+    else if "%now%" contains "08:00":
+        console command "/save-all"
+        kick all players because "Daily restart; come back in 20 seconds"
+        console command "/stop"
+
+# Keeps a database of player UUIDs and ages
+on login:
+    set {uuid.%name of player%} to UUID of player
+    set {uuid.%uuid of player%} to name of player
+
+    if player's ip contains "151.80.11." or "164.132.80." or "176.31.75." or "178.33.27." or "91.121.231.":
+        wait 1 tick
+        console command "/ban %player% [AUTO] McLeaks proxy user. gamealition@gmail.com"
+        exit trigger
+
+    if {age.%uuid of player%} is not set:
+        # First time players
+        wait 3 seconds
+        player is online
+        set {age.%name of player%} to now
+        set {age.%uuid of player%} to now
+        console command "/broadcast-irc *** Welcome to &B&LGamealition&f, new player &b%player%&f!"

@@ -1,0 +1,67 @@
+{
+  "name": "@skript-ide/desktop",
+  "productName": "Skript IDE",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Minecraft Skript development environment",
+  "author": "deezwend",
+  "homepage": "https://github.com/deezwend/skript-ide",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "io.github.deezwend.skriptide",
+    "productName": "Skript IDE",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**",
+      "resources/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Skript IDE",
+      "artifactName": "Skript-IDE-Setup-${version}.${ext}"
+    },
+    "electronVersion": "45.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "@skript-ide/i18n": "*",
+    "@skript-ide/language-server": "*",
+    "@skript-ide/runtime-validator": "*",
+    "@skript-ide/skript-language": "*",
+    "@skript-ide/syntax-db": "*",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "monaco-editor": "^0.57.0"
+  }
+}

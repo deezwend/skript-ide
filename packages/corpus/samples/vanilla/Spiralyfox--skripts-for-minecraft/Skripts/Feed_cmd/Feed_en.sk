@@ -1,0 +1,24 @@
+# ==================================================
+# Script made by Spiralyfox
+# Discord : @Spiralyfox
+# Script ideas ? Need a specific Skript ?
+# Contact me on Discord to contribute to the community.
+# ==================================================
+
+options:
+    # ==================================================
+    # General
+    # ==================================================
+    prefix: &b[Server name] &8» &r
+
+    # ==================================================
+    # Permissions
+    # ==================================================
+    perm_feed: spiralyskript.feed.feed
+
+command /feed:
+    permission: {@perm_feed}
+    trigger:
+        set player's food level to 20
+        set player's saturation to 20
+        send "{@prefix}&aYou have been fully fed." to player

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; font-src 'self' data:; img-src 'self' data:"
+    />
+    <title>Skript IDE</title>
+  </head>
+  <body>
+    <header id="titlebar">
+      <div class="titlebar-icon" aria-hidden="true">.sk</div>
+      <nav id="titlebar-menu" role="menubar"></nav>
+      <div id="titlebar-title">Skript IDE</div>
+    </header>
+
+    <div id="app">
+      <aside id="sidebar" data-view="explorer">
+        <div class="sidebar-tabs" role="tablist">
+          <button role="tab" data-sidebar-view="explorer" class="active" aria-selected="true" data-en="EXPLORER">GEZGİN</button>
+          <button role="tab" data-sidebar-view="outline" aria-selected="false" data-en="OUTLINE">ANAHAT</button>
+          <button role="tab" data-sidebar-view="syntax" aria-selected="false" data-en="SYNTAX BROWSER">SYNTAX TARAYICISI</button>
+          <span class="spacer"></span>
+          <button class="icon-button" data-action="open-folder" title="Klasör Aç" data-en-title="Open Folder">+</button>
+        </div>
+        <div id="sidebar-explorer" class="sidebar-view">
+          <div id="explorer"></div>
+        </div>
+        <div id="sidebar-outline" class="sidebar-view" hidden>
+          <div id="outline"></div>
+        </div>
+        <div id="sidebar-syntax" class="sidebar-view" hidden>
+          <div class="syntax-controls">
+            <input id="syntax-search" type="search" spellcheck="false" placeholder="Syntax ara (ör. send, on join, %player%)"
+              data-en-placeholder="Search syntax (e.g. send, on join, %player%)"
+            />
+            <div class="syntax-filter-row">
+              <select id="syntax-kind" title="Türe göre süz" data-en-title="Filter by kind"></select>
+              <select id="syntax-source" title="Kaynağa göre süz" data-en-title="Filter by source" hidden></select>
+              <span id="syntax-count"></span>
+            </div>
+          </div>
+          <div id="syntax-results" role="listbox" tabindex="0" aria-label="Syntax sonuçları" data-en-aria-label="Syntax results"></div>
+          <div id="syntax-detail" tabindex="0"></div>
+        </div>
+      </aside>
+
+      <main id="main">
+        <div id="tabs" role="tablist"></div>
+        <div id="editor-host">
+          <div id="editor"></div>
+          <div id="welcome">
+            <h1>Skript IDE</h1>
+            <p class="subtitle" data-en="Minecraft Skript development environment">Minecraft Skript geliştirme ortamı</p>
+            <div class="welcome-actions">
+              <button data-action="new-file"><span data-en="New File">Yeni Dosya</span> <kbd>Ctrl+N</kbd></button>
+              <button data-action="open-file"><span data-en="Open File">Dosya Aç</span> <kbd>Ctrl+O</kbd></button>
+              <button data-action="open-folder"><span data-en="Open Folder">Klasör Aç</span> <kbd>Ctrl+Shift+O</kbd></button>
+            </div>
+            <p class="welcome-hint">
+              <span data-en="A language server runs in the background for static analysis, completion and go to definition.">
+                Statik analiz, tamamlama ve tanıma gitme için dil sunucusu arka planda çalışır.
+              </span>
+              <br /><span data-en="Go to symbol:">Sembole gitmek için</span> <kbd>Ctrl+Alt+O</kbd>
+            </p>
+          </div>
+        </div>
+        <section id="panel">
+          <div class="panel-tabs" role="tablist">
+            <button class="active" role="tab" data-panel="problems">
+              <span data-en="PROBLEMS">PROBLEMLER</span> <span id="problem-count" class="badge" hidden></span>
+            </button>
+            <button role="tab" data-panel="console" data-en="SERVER CONSOLE">SUNUCU KONSOLU</button>
+            <span class="spacer"></span>
+            <button
+              class="panel-action"
+              data-action="validate"
+              title="Etkin dosyayı sunucuda doğrula (F5)"
+              data-en-title="Validate the active file on the server (F5)"
+              data-en="▶ Validate"
+            >
+              ▶ Doğrula
+            </button>
+          </div>
+          <div id="panel-problems" class="panel-view">
+            <div id="server-notice" hidden>
+              <span id="server-notice-text"></span>
+              <button id="server-notice-action"></button>
+            </div>
+            <div id="problems" class="panel-body"></div>
+          </div>
+          <div id="panel-console" class="panel-view" hidden>
+            <div id="terminal"></div>
+            <form id="console-form" autocomplete="off">
+              <span class="console-prompt">&gt;</span>
+              <input
+                id="console-input"
+                spellcheck="false"
+                placeholder="Sunucu komutu yaz, Enter ile gönder (ör. sk info)"
+                data-en-placeholder="Type a server command, press Enter to send (e.g. sk info)"
+              />
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer id="statusbar">
+      <button id="status-server" class="status-item"></button>
+      <button id="status-lsp" class="status-item"></button>
+      <span id="status-message"></span>
+      <span class="spacer"></span>
+      <span id="status-cursor"></span>
+      <span id="status-indent"></span>
+      <span>UTF-8</span>
+      <span id="status-language"></span>
+      <button id="status-skript" class="status-item" aria-haspopup="listbox" aria-expanded="false"></button>
+      <button id="status-addons" class="status-item"></button>
+    </footer>
+
+    <div id="version-picker" role="listbox" aria-label="Skript sürümü" data-en-aria-label="Skript version" hidden></div>
+
+    <dialog id="eula-dialog">
+      <form method="dialog">
+        <h2 data-en="Minecraft EULA">Minecraft EULA'sı</h2>
+        <p
+          data-en="To validate your scripts, Skript IDE runs a Paper server on this computer that can only be reached locally. Mojang requires you to accept the Minecraft End User License Agreement (EULA) before running a Minecraft server."
+        >
+          Skript IDE, betiklerini doğrulamak için bu bilgisayarda yalnızca yerelden erişilebilen bir Paper
+          sunucusu çalıştırır. Mojang, bir Minecraft sunucusu çalıştırmadan önce Minecraft Son Kullanıcı Lisans
+          Sözleşmesi'ni (EULA) kabul etmeni şart koşuyor.
+        </p>
+        <p><a id="eula-link" href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" data-en="Read the EULA ↗">EULA'yı oku ↗</a></p>
+        <label class="eula-check">
+          <input id="eula-checkbox" type="checkbox" />
+          <span data-en="I have read and accept the Minecraft EULA.">Minecraft EULA'sını okudum ve kabul ediyorum.</span>
+        </label>
+        <div class="dialog-actions">
+          <button value="cancel" formnovalidate data-en="Cancel">Vazgeç</button>
+          <button id="eula-accept" value="accept" class="primary" disabled data-en="Accept and Start">Kabul Et ve Başlat</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="addon-dialog" class="wide-dialog" aria-label="Addon'lar" data-en-aria-label="Addons"></dialog>
+    <dialog id="migration-dialog" class="wide-dialog" aria-label="Sürüm Geçiş Asistanı" data-en-aria-label="Version Migration Assistant"></dialog>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

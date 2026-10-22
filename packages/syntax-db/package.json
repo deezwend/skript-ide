@@ -1,0 +1,27 @@
+{
+  "name": "@skript-ide/syntax-db",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "generate": "tsx scripts/generate.ts",
+    "generate-addons": "tsx scripts/generate-addons.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@skript-ide/runtime-validator": "*",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.20.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts",
+    "./data/*": "./data/*"
+  },
+  "dependencies": {
+    "@skript-ide/i18n": "*"
+  }
+}

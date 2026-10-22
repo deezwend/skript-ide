@@ -1,0 +1,20 @@
+{
+  "name": "@skript-ide/runtime-validator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "verify-addons": "tsx scripts/verify-addons.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.20.0"
+  },
+  "dependencies": {
+    "@skript-ide/i18n": "*"
+  }
+}

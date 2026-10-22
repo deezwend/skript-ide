@@ -1,0 +1,20 @@
+{
+  "name": "@skript-ide/corpus",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "ground-truth": "tsx tools/ground-truth.ts",
+    "measure": "tsx tools/measure.ts",
+    "measure-variables": "tsx tools/measure-variables.ts"
+  },
+  "devDependencies": {
+    "@skript-ide/language-server": "*",
+    "@skript-ide/parser": "*",
+    "@skript-ide/runtime-validator": "*",
+    "@skript-ide/syntax-db": "*",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.20.0"
+  }
+}
