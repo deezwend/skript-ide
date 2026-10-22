@@ -3,9 +3,17 @@
  * masaüstü uygulaması bunu ana süreçte çalıştırır, sağlayıcıyı `ModelProvider` ile verir.
  */
 export {
+  imageDataUrl,
+  IMAGE_MEDIA_TYPES,
+  isImageMediaType,
+  MAX_IMAGE_BASE64_LENGTH,
+  MAX_IMAGES_PER_MESSAGE,
+  parseImageInput,
   textMessage,
   toolCalls,
   type ContentBlock,
+  type ImageBlock,
+  type ImageMediaType,
   type Message,
   type ProviderDataBlock,
   type ReasoningBlock,
@@ -13,16 +21,20 @@ export {
   type ToolCallBlock,
   type ToolResultBlock
 } from './messages'
+export { changesDiffStat, lineDiffStat, type DiffStat } from './diff-stat'
 export {
   defineTool,
   ToolError,
   type AgentLanguageService,
   type AgentTool,
   type ApprovalRequest,
+  type FileChange,
   type JsonSchema,
   type ToolContext,
   type ToolDiagnostic,
-  type ToolPermission
+  type ToolPermission,
+  type Todo,
+  type TodoStatus
 } from './tool'
 export {
   DEFAULT_PERMISSION_MODE,
@@ -93,14 +105,68 @@ export {
   parseCodexModels
 } from './codex-catalog'
 export { runAgent, type AgentEvent, type AgentStopReason, type RunAgentOptions, type RunAgentResult } from './loop'
-export { coreTools, editFileTool, listDirTool, readFileTool, searchFilesTool } from './tools/core'
+export { TRIMMED_RESULT, trimToolResults, type ContextLimits, type TrimResult } from './context'
 export {
+  COMPACTION_SYSTEM,
+  compactMessages,
+  isConversationSummary,
+  type CompactionOptions,
+  type CompactionResult
+} from './compaction'
+export {
+  latestProjectMemory,
+  loadProjectMemory,
+  MAX_PROJECT_MEMORY_CHARS,
+  parseProjectInstructions,
+  PROJECT_MEMORY_FILES,
+  PROJECT_MEMORY_INSTRUCTIONS,
+  projectMemoryText,
+  projectMemoryUpdate,
+  type ProjectMemory
+} from './project-memory'
+export { latestTodos, MAX_TODOS, todoTool } from './tools/todo'
+export {
+  coreTools,
+  deleteFileTool,
+  editFileTool,
+  findFilesTool,
+  listDirTool,
+  moveFileTool,
+  multiEditTool,
+  readFileTool,
+  searchFilesTool,
+  writeFileTool
+} from './tools/core'
+export {
+  createExampleTools,
   createSkriptTools,
+  defaultExampleLoader,
+  explainLineTool,
+  findDefinitionTool,
+  findReferencesTool,
   getDiagnosticsTool,
+  getMigrationNotesTool,
+  getOutlineTool,
   getProjectInfoTool,
+  getServerLogTool,
+  inspectPositionTool,
+  renameSymbolTool,
+  runServerCommandTool,
+  testScriptTool,
   validateOnServerTool,
+  type ExampleLoader,
   type SyntaxLoaders
 } from './tools/skript'
+export { SKRIPT_GUIDE } from './skript-guide'
+export {
+  displayGeometryTool,
+  GEOMETRY_INSTRUCTIONS,
+  geometryTools,
+  mathEvalTool,
+  SCRIPT_MARKER,
+  writeDisplayLibraryTool,
+  writeDisplayScriptTool
+} from './tools/geometry'
 export {
   attachmentText,
   formatMention,
@@ -113,6 +179,13 @@ export {
 } from './mentions'
 export { listProjectFiles, readMentions, type MentionAttachments } from './attachments'
 export { GOAL_INSTRUCTIONS, goalText, goalUpdate, latestGoal, parseGoal } from './goal'
+export {
+  EDITOR_CONTEXT_INSTRUCTIONS,
+  editorContextText,
+  isEditorContext,
+  parseEditorContextInput,
+  type EditorContext
+} from './editor-context'
 export {
   CACHE_NOISE_FLOOR_TOKENS,
   calculateCost,

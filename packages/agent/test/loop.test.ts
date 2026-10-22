@@ -7,6 +7,7 @@ import {
   ToolError,
   ToolRegistry,
   type AgentEvent,
+  type ModelResponse,
   type ToolResultBlock
 } from '../src/index'
 import { callTool, FakeProvider, reply } from './fakes/provider'
@@ -265,4 +266,176 @@ test('iptal edilince AbortError fırlatır', async () => {
 test('registry geçersiz ya da tekrar eden adı reddeder', () => {
   assert.throws(() => new ToolRegistry([echoTool, echoTool]), /zaten kayıtlı/)
   assert.throws(() => new ToolRegistry([{ ...echoTool, name: 'Bad Name' }]), /Geçersiz tool adı/)
+})
+
+
+// --- Paralel okuma çağrıları ---
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+let active = 0
+let maxActive = 0
+const runLog: string[] = []
+
+/** Eşzamanlılığı ölçmek için gecikmeli okuma tool'u. */
+const slowRead = defineTool<{ name: string }>({
+  name: 'slow_read',
+  description: 'Read slowly.',
+  inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+  permission: 'read',
+  async execute({ name }) {
+    active++
+    maxActive = Math.max(maxActive, active)
+    runLog.push(`start:${name}`)
+    await delay(15)
+    runLog.push(`end:${name}`)
+    active--
+    return name
+  }
+})
+
+let writeActive = 0
+let maxWriteActive = 0
+const slowWrite = defineTool<{ name: string }>({
+  name: 'slow_write',
+  description: 'Write slowly.',
+  inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+  permission: 'write',
+  async preview({ name }) {
+    return { summary: name }
+  },
+  async execute({ name }) {
+    writeActive++
+    maxWriteActive = Math.max(maxWriteActive, writeActive)
+    runLog.push(`start:${name}`)
+    await delay(10)
+    runLog.push(`end:${name}`)
+    writeActive--
+    return name
+  }
+})
+
+/** Tek yanıtta birden çok tool çağrısı üretir. */
+function batch(names: { name: string; write?: boolean }[]): ModelResponse {
+  return {
+    content: names.map(({ name, write }, index) => ({
+      type: 'tool_call' as const,
+      id: `c${index}`,
+      name: write ? 'slow_write' : 'slow_read',
+      input: { name }
+    })),
+    stopReason: 'tool_use'
+  }
+}
+
+const parallelRegistry = new ToolRegistry([slowRead, slowWrite])
+
+test('ardışık okuma çağrıları eşzamanlı çalışır ve en fazla 8 tanesi aynı anda koşar', async () => {
+  active = 0
+  maxActive = 0
+  runLog.length = 0
+  const provider = new FakeProvider([batch(Array.from({ length: 10 }, (_, i) => ({ name: String(i) }))), reply('done')])
+  const result = await runAgent({
+    provider,
+    registry: parallelRegistry,
+    context: makeContext(),
+    system: '',
+    messages: [textMessage('user', 'x')]
+  })
+  assert.equal(result.reason, 'end')
+  assert.equal(maxActive, 8)
+  const blocks = provider.requests[1]!.messages.at(-1)!.content as ToolResultBlock[]
+  assert.deepEqual(
+    blocks.map((block) => block.callId),
+    Array.from({ length: 10 }, (_, i) => `c${i}`)
+  )
+  assert.deepEqual(
+    blocks.map((block) => block.content),
+    Array.from({ length: 10 }, (_, i) => String(i))
+  )
+})
+
+test('write çağrısı bariyer gibidir: önceki okumalar biter, sonraki okuma ondan sonra başlar', async () => {
+  active = 0
+  maxActive = 0
+  writeActive = 0
+  maxWriteActive = 0
+  runLog.length = 0
+  const provider = new FakeProvider([batch([{ name: 'a' }, { name: 'b' }, { name: 'w', write: true }, { name: 'c' }]), reply('done')])
+  await runAgent({
+    provider,
+    registry: parallelRegistry,
+    context: makeContext({ approve: true }),
+    system: '',
+    messages: [textMessage('user', 'x')]
+  })
+
+  assert.equal(maxActive, 2)
+  assert.equal(maxWriteActive, 1)
+  assert.ok(runLog.indexOf('start:w') > runLog.indexOf('start:a'))
+  assert.ok(runLog.indexOf('start:w') > runLog.indexOf('start:b'))
+  assert.ok(runLog.indexOf('start:w') > runLog.indexOf('end:a'))
+  assert.ok(runLog.indexOf('start:w') > runLog.indexOf('end:b'))
+  assert.ok(runLog.indexOf('start:c') > runLog.indexOf('end:w'))
+})
+
+test('paralel grupta iptal AbortError fırlatır', async () => {
+  const controller = new AbortController()
+  const provider = new FakeProvider([batch([{ name: 'a' }, { name: 'b' }, { name: 'c' }]), reply('done')])
+  setTimeout(() => controller.abort(), 5)
+  await assert.rejects(
+    runAgent({
+      provider,
+      registry: parallelRegistry,
+      context: makeContext({ signal: controller.signal }),
+      system: '',
+      messages: [textMessage('user', 'x')]
+    }),
+    { name: 'AbortError' }
+  )
+  assert.equal(provider.requests.length, 1)
+})
+
+test('bilinmeyen tool ve geçersiz girdi, paralel okumaların arasında sırasıyla hata döner', async () => {
+  const registry = new ToolRegistry([slowRead])
+  const provider = new FakeProvider([
+    {
+      content: [
+        { type: 'tool_call', id: 'a', name: 'slow_read', input: { name: 'a' } },
+        { type: 'tool_call', id: 'x', name: 'nope', input: {} },
+        { type: 'tool_call', id: 'i', name: 'slow_read', input: { name: 5 } },
+        { type: 'tool_call', id: 'b', name: 'slow_read', input: { name: 'b' } }
+      ],
+      stopReason: 'tool_use'
+    },
+    reply('done')
+  ])
+  await runAgent({ provider, registry, context: makeContext(), system: '', messages: [textMessage('user', 'x')] })
+  const blocks = provider.requests[1]!.messages.at(-1)!.content as ToolResultBlock[]
+  assert.deepEqual(
+    blocks.map((block) => block.callId),
+    ['a', 'x', 'i', 'b']
+  )
+  assert.equal(blocks[1]!.isError, true)
+  assert.match(blocks[1]!.content, /Unknown tool/)
+  assert.equal(blocks[2]!.isError, true)
+  assert.match(blocks[2]!.content, /input\.name/)
+  assert.equal(blocks[0]!.content, 'a')
+  assert.equal(blocks[3]!.content, 'b')
+})
+
+test('always-ask modunda okuma çağrıları paralel çalışmaz', async () => {
+  active = 0
+  maxActive = 0
+  const registry = new ToolRegistry([slowRead])
+  const provider = new FakeProvider([batch([{ name: 'a' }, { name: 'b' }]), reply('done')])
+  await runAgent({
+    provider,
+    registry,
+    context: makeContext({ approve: true }),
+    system: '',
+    messages: [textMessage('user', 'x')],
+    permissionMode: () => 'always-ask'
+  })
+  assert.equal(maxActive, 1)
 })

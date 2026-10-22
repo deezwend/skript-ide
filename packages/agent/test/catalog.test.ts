@@ -88,6 +88,7 @@ test('katalog tool çağırabilen, desteklenen modelleri süzer', () => {
     effortLevels: ['low', 'medium', 'high'],
     contextWindow: 200000,
     maxOutput: 128000,
+    images: false,
     cost: { input: 1, output: 5 },
     releaseDate: '2026-09-01',
     status: undefined

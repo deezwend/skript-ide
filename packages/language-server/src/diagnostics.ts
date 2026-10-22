@@ -1,5 +1,13 @@
 import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver'
-import type { LineInfo, MatchStatusLike, MatcherAdapter, SkriptDocument, SyntaxMatchLike } from './contracts'
+import type {
+  FunctionCall,
+  FunctionDefinition,
+  LineInfo,
+  MatchStatusLike,
+  MatcherAdapter,
+  SkriptDocument,
+  SyntaxMatchLike
+} from './contracts'
 import { analyzeDocument, type DocumentAnalysis, type LineContext } from './document'
 import { compareVersions, versionDistance } from './util'
 import { l } from '@skript-ide/i18n'
@@ -10,6 +18,14 @@ export const DiagnosticCodes = {
   /** Parser'ın kodu `parse/<parser-kodu>` biçiminde eklenir. */
   parse: 'parse',
   undefinedFunction: 'undefined-function',
+  /** Çağrıdaki argüman sayısı fonksiyonun imzasına uymuyor. */
+  functionArguments: 'function-arguments',
+  /** Bir argüman sabiti parametrenin türüne açıkça uymuyor (ör. sayı bekleyen yere metin). */
+  functionArgumentType: 'function-argument-type',
+  /** Fonksiyon yalnızca Skript'in yüklemediği (`-` ile başlayan) bir dosyada tanımlı. */
+  functionDisabledFile: 'function-disabled-file',
+  /** Fonksiyon başka bir dosyada tanımlı; oyunda bu dosya tek başına yüklenirse o dosya da yüklü olmalı. */
+  functionOtherFile: 'function-other-file',
   undefinedOption: 'undefined-option',
   versionSyntax: 'version-syntax',
   /** Satır seçili olmayan bir addon'un (ya da seçili addon'un başka sürümünün) syntax'ı. */
@@ -241,6 +257,16 @@ function buildMessage(currentVersion: string, foundVersion: string, match: Synta
   return l(`Bu syntax Skript ${currentVersion} sürümünde yok ya da kaldırılmış (Skript ${foundVersion} sürümünde vardı).`, `This syntax does not exist or was removed in Skript ${currentVersion} (it existed in Skript ${foundVersion}).`)
 }
 
+export interface FunctionSite {
+  definition: FunctionDefinition
+  /** Tanımın bulunduğu dosya, betik klasörüne göre (ör. `kaydirak/kaydirak-cizim.sk`). */
+  path: string
+  /** Tanım, tanıları hesaplanan dosyanın kendisinde mi? */
+  sameFile: boolean
+  /** Skript bu dosyayı yüklemez: kendisi ya da bir üst klasörü `-` ile başlıyor. */
+  disabled: boolean
+}
+
 export interface DiagnosticsOptions {
   currentVersion: string
   versionChecker: VersionChecker
@@ -250,6 +276,11 @@ export interface DiagnosticsOptions {
   definedFunctions: ReadonlySet<string>
   /** Tanımsız fonksiyon denetimi yapılmalı mı? (çalışma alanı listesi tam ya da hiç bildirilmemiş) */
   checkUndefinedFunctions: boolean
+  /**
+   * Çalışma alanındaki fonksiyon tanımları (küçük harfli ad → tanımlar, başka dosyalardaki local olanlar dahil).
+   * Verilirse imza (argüman sayısı/türü) ve dosya bağımlılığı denetimleri de yapılır.
+   */
+  workspaceFunctions?: ReadonlyMap<string, readonly FunctionSite[]>
   /** Hiçbir syntax'a uymayan satırlar raporlansın mı? (verisi olmayan addon seçiliyse hayır) */
   checkUnknownSyntax?: boolean
   /** Daha yeni bir belge sürümü geldiyse hesaplamayı bırakmak için (isteğe bağlı). */
@@ -306,6 +337,7 @@ export function collectDiagnostics(
 
   if (options.additional) diagnostics.push(...options.additional)
   addUndefinedFunctions(doc, options, diagnostics)
+  addFunctionCallChecks(doc, options, diagnostics)
   addUndefinedOptions(doc, analysis, diagnostics)
   if (options.checkUnknownSyntax !== false) addMisplacedStructures(doc, diagnostics, parserErrorLines)
 
@@ -342,6 +374,151 @@ function addUndefinedFunctions(
       data: { skriptVersion: options.currentVersion }
     })
   }
+}
+
+/*
+ * Oyunda "The function x(object, number) does not exist" hatası şu durumlarda çıkar:
+ *  - argüman sayısı imzaya uymaz ya da bir argüman parametre türüne dönüştürülemez,
+ *  - fonksiyon Skript'in yüklemediği bir dosyadadır (`-` ile başlayan dosya/klasör),
+ *  - fonksiyon başka bir dosyadadır ve o dosya sunucuda (henüz) yüklü değildir; örneğin yeni oluşturulmuş
+ *    ve yalnızca bu dosya `sk reload` ile yüklenmiştir.
+ * Son durum statik olarak kesin bilinemez; bilgi düzeyinde hatırlatılır.
+ */
+function addFunctionCallChecks(
+  doc: SkriptDocument,
+  options: DiagnosticsOptions,
+  diagnostics: Diagnostic[]
+): void {
+  const functions = options.workspaceFunctions
+  if (!functions) return
+  const remindedOtherFile = new Set<string>()
+  for (const call of doc.functionCalls) {
+    const line = doc.lines[call.nameRange.start.line]
+    if (!line || isMethodCall(line, call.nameRange.start.character)) continue
+    const key = call.name.toLowerCase()
+    const visible = (functions.get(key) ?? []).filter((site) => site.sameFile || !site.definition.local)
+    if (visible.length === 0) continue
+    const loaded = visible.filter((site) => site.sameFile || !site.disabled)
+    if (loaded.length === 0) {
+      diagnostics.push({
+        range: call.nameRange,
+        severity: DiagnosticSeverity.Error,
+        code: DiagnosticCodes.functionDisabledFile,
+        source: DIAGNOSTIC_SOURCE,
+        message: l(
+          `"${call.name}" yalnızca ${visible[0].path} dosyasında tanımlı; Skript adı "-" ile başlayan dosya ve klasörleri yüklemez. Oyunda "The function ${call.name}(…) does not exist" hatası verir.`,
+          `"${call.name}" is only defined in ${visible[0].path}; Skript does not load files or folders whose name starts with "-". In game this fails with "The function ${call.name}(…) does not exist".`
+        )
+      })
+      continue
+    }
+    const site = loaded.find((candidate) => candidate.sameFile) ?? loaded[0]
+    checkArguments(call, line, site.definition, diagnostics)
+    if (!site.sameFile && !remindedOtherFile.has(key)) {
+      remindedOtherFile.add(key)
+      diagnostics.push({
+        range: call.nameRange,
+        severity: DiagnosticSeverity.Information,
+        code: DiagnosticCodes.functionOtherFile,
+        source: DIAGNOSTIC_SOURCE,
+        message: l(
+          `"${call.name}" ${site.path} dosyasında tanımlı. Bu dosyayı oyunda tek başına yüklüyorsan önce o dosya yüklü olmalı (/sk reload ${site.path}); yoksa "The function ${call.name}(…) does not exist" hatası alırsın.`,
+          `"${call.name}" is defined in ${site.path}. If you reload only this file in game, that file must be loaded first (/sk reload ${site.path}); otherwise you get "The function ${call.name}(…) does not exist".`
+        ),
+        data: { path: site.path }
+      })
+    }
+  }
+}
+
+/** Metin sabiti bu türlere hiçbir zaman dönüştürülmez. */
+const NON_TEXT_TYPES = new Set([
+  'number', 'numbers', 'integer', 'integers', 'boolean', 'booleans', 'location', 'locations',
+  'vector', 'vectors', 'entity', 'entities', 'player', 'players'
+])
+const TEXT_LITERAL = /^"(?:[^"]|"")*"$/
+const LIST_JOINER = /\s(?:and|or|nor)\s/i
+
+function checkArguments(call: FunctionCall, line: LineInfo, definition: FunctionDefinition, diagnostics: Diagnostic[]): void {
+  const open = line.text.indexOf('(', call.nameRange.end.character - line.start)
+  if (open < 0) return
+  const inner = splitArguments(line.text.slice(open + 1))
+  // Kapanmayan parantez: `rest` boş değilse çağrı satırda bitmiyor, denetlenmez
+  if (inner.rest === null) return
+  const args = inner.args
+  const parameters = definition.parameters
+  const max = parameters.length
+  const min = parameters.filter((parameter) => parameter.defaultValue === undefined).length
+  const signature = `${definition.name}(${parameters.map((parameter) => `${parameter.name}: ${parameter.type}`).join(', ')})`
+
+  // Tek parametreli fonksiyonda Skript bütün argümanları tek bir liste olarak verir; virgüller sayılmaz.
+  // "a and b" de birden çok argüman sayılabildiğinden virgül sayısı alt sınırdır: "az argüman" yalnızca
+  // böyle bir liste yoksa söylenir.
+  const tooMany = max !== 1 && args.length > max
+  const tooFew = args.length < min && !args.some((arg) => LIST_JOINER.test(arg))
+  if (tooMany || tooFew) {
+    const expected = min === max ? `${max}` : `${min}–${max}`
+    diagnostics.push({
+      range: call.range,
+      severity: DiagnosticSeverity.Error,
+      code: DiagnosticCodes.functionArguments,
+      source: DIAGNOSTIC_SOURCE,
+      message: l(
+        `"${definition.name}" ${expected} argüman alıyor ama ${args.length} verildi (${signature}). Oyunda "The function ${definition.name}(…) does not exist" hatası verir.`,
+        `"${definition.name}" takes ${expected} arguments but ${args.length} were given (${signature}). In game this fails with "The function ${definition.name}(…) does not exist".`
+      )
+    })
+    return
+  }
+
+  if (max === 1 && args.length > 1) return
+  args.forEach((arg, index) => {
+    const parameter = parameters[index]
+    if (!parameter || !TEXT_LITERAL.test(arg)) return
+    if (!NON_TEXT_TYPES.has(parameter.type.trim().toLowerCase())) return
+    diagnostics.push({
+      range: call.range,
+      severity: DiagnosticSeverity.Error,
+      code: DiagnosticCodes.functionArgumentType,
+      source: DIAGNOSTIC_SOURCE,
+      message: l(
+        `"${definition.name}" fonksiyonunun ${index + 1}. argümanı (${parameter.name}) ${parameter.type} olmalı ama metin verildi: ${arg}. Oyunda "The function ${definition.name}(…) does not exist" hatası verir.`,
+        `Argument ${index + 1} of "${definition.name}" (${parameter.name}) must be ${parameter.type}, but text was given: ${arg}. In game this fails with "The function ${definition.name}(…) does not exist".`
+      )
+    })
+  })
+}
+
+/**
+ * Açılış parantezinden sonraki metni, çağrıyı kapatan `)` işaretine kadar parantez, köşeli/süslü parantez
+ * ve tırnak dışındaki virgüllerden böler. `rest`: kapanıştan sonraki metin; çağrı kapanmıyorsa null.
+ */
+export function splitArguments(text: string): { args: string[]; rest: string | null } {
+  const parts: string[] = []
+  let depth = 0
+  let inString = false
+  let start = 0
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charAt(i)
+    if (char === '"') {
+      // Skript metninde "" kaçışlı bir tırnaktır
+      if (inString && text.charAt(i + 1) === '"') i++
+      else inString = !inString
+      continue
+    }
+    if (inString) continue
+    if (char === '(' || char === '[' || char === '{') depth++
+    else if (char === ')' && depth === 0) {
+      const last = text.slice(start, i).trim()
+      if (parts.length > 0 || last !== '') parts.push(last)
+      return { args: parts, rest: text.slice(i + 1) }
+    } else if (char === ')' || char === ']' || char === '}') depth = Math.max(0, depth - 1)
+    else if (char === ',' && depth === 0) {
+      parts.push(text.slice(start, i).trim())
+      start = i + 1
+    }
+  }
+  return { args: parts, rest: null }
 }
 
 function isMethodCall(line: LineInfo, character: number): boolean {

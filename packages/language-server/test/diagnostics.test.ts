@@ -218,3 +218,64 @@ test('belge sürümü değişince sürüm taraması erken biter', async () => {
   assert.equal(diagnostics.length, 0)
   assert.ok(matchCalls < 400, `eski belge için tüm satırlar taranmamalı: ${matchCalls}`)
 })
+
+test('başka dosyadaki fonksiyon çağrısı: imza ve dosya bağımlılığı denetimleri', async () => {
+  const service = createService()
+  service.openDocument(
+    'file:///test/kaydirak/kaydirak-cizim.sk',
+    ['function kaydirak_ciz(origin: location, yaw: number = 0) :: entities:', '    return {_x::*}'].join('\n'),
+    1
+  )
+  service.openDocument('file:///test/-kapali.sk', ['function kapali(a: number):', '    stop'].join('\n'), 1)
+  const consumer = 'file:///test/kaydirak.sk'
+  service.openDocument(
+    consumer,
+    [
+      'on join:',
+      '    set {_d::*} to kaydirak_ciz({_yer}, yaw of {_yer})',
+      '    kaydirak_ciz({_yer})',
+      '    kaydirak_ciz({_yer}, 1, 2)',
+      '    kaydirak_ciz()',
+      '    kaydirak_ciz("burası", 5)',
+      '    kapali(1)'
+    ].join('\n'),
+    1
+  )
+  service.setWorkspaceFiles([], true)
+
+  const diagnostics = await service.getDiagnostics(consumer)
+  const at = (code: string) => diagnostics.filter((d) => d.code === code).map((d) => d.range.start.line)
+
+  assert.deepEqual(at('function-other-file'), [1])
+  const other = diagnostics.find((d) => d.code === 'function-other-file')
+  assert.equal(other?.severity, DiagnosticSeverity.Information)
+  assert.match(String(other?.message), /kaydirak\/kaydirak-cizim\.sk/)
+  assert.deepEqual(at('function-arguments'), [3, 4])
+  assert.deepEqual(at('function-argument-type'), [5])
+  assert.deepEqual(at('function-disabled-file'), [6])
+  assert.ok(!at('undefined-function').length, codes(diagnostics).join(','))
+})
+
+test('tek parametreli liste fonksiyonu ve "and" listeleri yanlış pozitif üretmez', async () => {
+  const service = createService()
+  const uri = 'file:///test/liste.sk'
+  service.openDocument(
+    uri,
+    [
+      'function topla(n: numbers) :: number:',
+      '    return 0',
+      'function iki(a: number, b: number) :: number:',
+      '    return 0',
+      'on join:',
+      '    topla(1, 2, 3)',
+      '    iki(1 and 2)',
+      '    iki(f(1, 2), "a,b" parsed as number)'
+    ].join('\n'),
+    1
+  )
+  service.setWorkspaceFiles([], true)
+  const diagnostics = await service.getDiagnostics(uri)
+  const found = codes(diagnostics)
+  assert.ok(!found.includes('function-arguments'), found.join(','))
+  assert.ok(!found.includes('function-other-file'), found.join(','))
+})

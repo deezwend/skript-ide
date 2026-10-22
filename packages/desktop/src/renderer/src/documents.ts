@@ -67,10 +67,11 @@ export class DocumentManager {
     return this.add(null, l(`Adsız-${this.untitledCounter}.sk`, `Untitled-${this.untitledCounter}.sk`), model)
   }
 
-  async open(path: string): Promise<OpenDocument> {
+  /** `preserveFocus`: belge gösterilir ama odak çağıranda kalır (örn. gezginde klavyeyle devam etmek için). */
+  async open(path: string, preserveFocus = false): Promise<OpenDocument> {
     const existing = this.docs.find((doc) => doc.path !== null && samePath(doc.path, path))
     if (existing) {
-      this.activate(existing.id)
+      this.activate(existing.id, preserveFocus)
       return existing
     }
     const content = await api.readFile(path)
@@ -85,10 +86,10 @@ export class DocumentManager {
     } else {
       model = monaco.editor.createModel(content, languageForPath(path), uri)
     }
-    return this.add(path, '', model)
+    return this.add(path, '', model, preserveFocus)
   }
 
-  activate(id: number): void {
+  activate(id: number, preserveFocus = false): void {
     const next = this.docs.find((doc) => doc.id === id)
     if (!next) return
     const current = this.active
@@ -96,7 +97,7 @@ export class DocumentManager {
     this.activeId = id
     this.editor.setModel(next.model)
     if (next.viewState) this.editor.restoreViewState(next.viewState)
-    this.editor.focus()
+    if (!preserveFocus) this.editor.focus()
     this.emit()
   }
 
@@ -131,6 +132,19 @@ export class DocumentManager {
     this.rebind(doc)
     this.emit()
     return true
+  }
+
+  /** Dosya diskte yeniden adlandırıldı ya da taşındı; sekme yeni yolu izler, kaydedilmemiş değişiklikler korunur. */
+  relocate(doc: OpenDocument, path: string): void {
+    const dirty = this.isDirty(doc)
+    doc.path = path
+    this.rebind(doc)
+    if (dirty) {
+      // Yeni modelin hiçbir sürümü diskteki içerikle eşleşmez
+      doc.savedVersionId = -1
+      doc.wasDirty = true
+    }
+    this.emit()
   }
 
   /**
@@ -208,7 +222,7 @@ export class DocumentManager {
     this.emit()
   }
 
-  private add(path: string | null, untitledName: string, model: monaco.editor.ITextModel): OpenDocument {
+  private add(path: string | null, untitledName: string, model: monaco.editor.ITextModel, preserveFocus = false): OpenDocument {
     const doc: OpenDocument = {
       id: this.nextId++,
       path,
@@ -221,7 +235,7 @@ export class DocumentManager {
     // Her tuşta değil, yalnızca "kaydedildi / değişti" durumu değişince bildir
     this.watch(doc)
     this.docs.push(doc)
-    this.activate(doc.id)
+    this.activate(doc.id, preserveFocus)
     return doc
   }
 

@@ -9,6 +9,7 @@ export default defineConfig({
           '@skript-ide/runtime-validator',
           '@skript-ide/i18n',
           '@skript-ide/agent',
+          '@skript-ide/corpus',
           '@skript-ide/language-server',
           '@skript-ide/parser',
           '@skript-ide/pattern-compiler',

@@ -20,6 +20,8 @@ export interface CatalogModel {
   effortLevels?: string[]
   contextWindow: number
   maxOutput: number
+  /** Görsel girdisi; `false`: katalog yalnızca metin kabul ettiğini söylüyor, `undefined`: bilinmiyor. */
+  images?: boolean
   /** 1M token başına USD. */
   cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
   releaseDate?: string
@@ -71,7 +73,7 @@ interface RawModel {
   reasoning_options?: { type?: unknown; values?: unknown }[]
   status?: unknown
   type?: unknown
-  modalities?: { output?: unknown }
+  modalities?: { input?: unknown; output?: unknown }
   limit?: { context?: unknown; output?: unknown }
   cost?: { input?: unknown; output?: unknown; cache_read?: unknown; cache_write?: unknown }
   release_date?: unknown
@@ -138,6 +140,7 @@ function parseModel(providerId: string, p: RawProvider, key: string, m: RawModel
   const effortLevels = Array.isArray(effort?.values)
     ? effort.values.filter((v): v is string => typeof v === 'string' && v !== 'none')
     : undefined
+  const inputs = m.modalities?.input
   const costInput = num(m.cost?.input)
   const costOutput = num(m.cost?.output)
 
@@ -151,6 +154,7 @@ function parseModel(providerId: string, p: RawProvider, key: string, m: RawModel
     effortLevels: effortLevels?.length ? effortLevels : undefined,
     contextWindow: num(m.limit?.context) ?? 0,
     maxOutput: num(m.limit?.output) ?? 0,
+    ...(Array.isArray(inputs) ? { images: inputs.includes('image') } : {}),
     cost:
       costInput !== undefined && costOutput !== undefined
         ? { input: costInput, output: costOutput, ...optional('cacheRead', num(m.cost?.cache_read)), ...optional('cacheWrite', num(m.cost?.cache_write)) }

@@ -1,12 +1,23 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { getLocale, l, type Locale } from '@skript-ide/i18n'
-import { IpcChannel } from '../shared/ipc'
+import { IpcChannel, type ContextMenuItem } from '../shared/ipc'
 import { setupAgent } from './agent'
 import { initLocale, saveLocale } from './locale'
 import { buildAppMenu } from './menu'
 import { setupValidator } from './validator'
-import { allowPath, listDirectory, readTextFile, writeTextFile } from './workspace'
+import {
+  allowPath,
+  createDirectory,
+  createFile,
+  listDirectory,
+  readTextFile,
+  renamePath,
+  revealPath,
+  transferPath,
+  trashPath,
+  writeTextFile
+} from './workspace'
 
 // Menü, iletişim kutuları ve doğrulama sunucusunun mesajları bu dilde üretilir
 initLocale()
@@ -119,6 +130,37 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IpcChannel.readDir, (_event, dir: string) => listDirectory(dir))
   ipcMain.handle(IpcChannel.readFile, (_event, path: string) => readTextFile(path))
   ipcMain.handle(IpcChannel.writeFile, (_event, path: string, content: string) => writeTextFile(path, content))
+  ipcMain.handle(IpcChannel.createFile, (_event, dir: string, name: string) => createFile(String(dir), String(name)))
+  ipcMain.handle(IpcChannel.createDirectory, (_event, dir: string, name: string) => createDirectory(String(dir), String(name)))
+  ipcMain.handle(IpcChannel.renamePath, (_event, path: string, newName: string) => renamePath(String(path), String(newName)))
+  ipcMain.handle(IpcChannel.trashPath, (_event, path: string) => trashPath(String(path)))
+  ipcMain.handle(IpcChannel.transferPath, (_event, source: string, targetDir: string, move: boolean) =>
+    transferPath(String(source), String(targetDir), move === true)
+  )
+  ipcMain.handle(IpcChannel.revealPath, (_event, path: string) => revealPath(String(path)))
+  ipcMain.handle(IpcChannel.contextMenu, (event, items: ContextMenuItem[]) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window || !Array.isArray(items)) return null
+    return new Promise<string | null>((resolve) => {
+      let chosen: string | null = null
+      const menu = Menu.buildFromTemplate(
+        items.map((item) =>
+          'id' in item
+            ? {
+                label: String(item.label),
+                enabled: item.enabled !== false,
+                accelerator: item.accelerator,
+                // Kısayollar gezginde işlenir; menüde yalnızca gösterilir
+                registerAccelerator: false,
+                click: () => (chosen = String(item.id))
+              }
+            : { type: 'separator' as const }
+        )
+      )
+      // Menü kapandığında tıklama henüz işlenmemiş olabilir; bir tur bekle
+      menu.popup({ window, callback: () => setTimeout(() => resolve(chosen)) })
+    })
+  })
   ipcMain.on(IpcChannel.setDirty, (_event, dirty: boolean) => {
     hasUnsavedChanges = dirty
   })

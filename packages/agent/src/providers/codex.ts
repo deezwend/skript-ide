@@ -1,4 +1,4 @@
-import type { ContentBlock, Message, ProviderDataBlock } from '../messages'
+import { imageDataUrl, type ContentBlock, type Message, type ProviderDataBlock } from '../messages'
 import {
   ProviderError,
   type ModelProvider,
@@ -30,9 +30,13 @@ export interface CodexProviderOptions {
   fetch?: typeof fetch
 }
 
+type ResponsesContent =
+  | { type: 'input_text' | 'output_text'; text: string }
+  | { type: 'input_image'; image_url: string; detail: 'auto' }
+
 /** Responses API'ye gönderilen tek bir girdi öğesi. */
 type ResponsesItem =
-  | { type?: 'message'; role: 'user' | 'assistant'; content: { type: 'input_text' | 'output_text'; text: string }[] }
+  | { type?: 'message'; role: 'user' | 'assistant'; content: ResponsesContent[] }
   | { type: 'function_call'; call_id: string; name: string; arguments: string }
   | { type: 'function_call_output'; call_id: string; output: string }
   /** Düşünme öğesi: `store: false` ile tool döngüsünde aynen geri gönderilmeli. */
@@ -205,7 +209,12 @@ export function toResponsesInput(messages: readonly Message[], providerId: strin
       }
     }
     const text = joinText(message.content)
-    if (text) input.push({ role: 'user', content: [{ type: 'input_text', text }] })
+    const images = message.content.flatMap((block): ResponsesContent[] =>
+      block.type === 'image' ? [{ type: 'input_image', image_url: imageDataUrl(block), detail: 'auto' }] : []
+    )
+    if (text || images.length) {
+      input.push({ role: 'user', content: [...(text ? [{ type: 'input_text' as const, text }] : []), ...images] })
+    }
   }
   return input
 }

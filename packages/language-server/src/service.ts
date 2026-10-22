@@ -34,10 +34,12 @@ import {
   DIAGNOSTIC_SOURCE,
   VersionChecker,
   type AddonCandidate,
+  type FunctionSite,
   type VersionWarning
 } from './diagnostics'
 import { loadDefaultAdapters } from './defaults'
-import { analyzeDocument, type DocumentAnalysis } from './document'
+import { analyzeDocument, findNodePath, type DocumentAnalysis, type LineContextKind } from './document'
+import { explainLine as explainLineWithMatcher, type LineExplanation } from './explain'
 import { computeHover, type HoverFunction } from './hover'
 import {
   computeDefinition,
@@ -45,9 +47,10 @@ import {
   type NavigationFile,
   type WorkspaceFunction
 } from './navigation'
+import type { ScopeInfo, ScopeSyntaxRef } from './scope'
 import { computeSemanticTokens } from './semantic-tokens'
 import { computeDocumentSymbols } from './symbols'
-import { rangesIntersect, uriKey } from './util'
+import { lineAt, rangesIntersect, uriKey } from './util'
 import { buildMigrationReport, type MigrationEntryRef, type MigrationReport } from './migration'
 import {
   analyzeVariables,
@@ -362,19 +365,33 @@ export class SkriptLanguageService {
     const expectedVersion = this.openDocuments.get(key)?.version
     const file = await this.lookupFile(uri)
     if (!file) return []
-    await this.ensureVersion()
-    const version = this.currentVersion
-    const [builtins, definedFunctions, addonSet] = await Promise.all([
-      this.getBuiltinFunctions(version),
-      this.definedFunctionNames(file.key),
-      this.getAddonSet(version)
-    ])
     // Hesaplama sürerken belge güncellendiyse kalan satırları taramayı bırak; sunucu eski
     // sonucu zaten yayınlamaz, burada yalnızca boşa iş yapılmaması sağlanır.
     const isCurrent =
       expectedVersion === undefined
         ? undefined
         : (): boolean => this.openDocuments.get(key)?.version === expectedVersion
+    return this.diagnose(file, isCurrent)
+  }
+
+  /**
+   * Verilen metnin tanıları; açık belgeyi ve çalışma alanını değiştirmez. Ajan düzenleme öncesi ve
+   * sonrası metni karşılaştırabilsin diye eklendi (diskteki içerikle açık belge çakışmasın).
+   */
+  async getDiagnosticsForText(uri: string, text: string): Promise<Diagnostic[]> {
+    const parsed = await this.parseText(text)
+    return this.diagnose({ uri, key: uriKey(uri), text, doc: parsed.doc, analysis: parsed.analysis, parsed })
+  }
+
+  private async diagnose(file: StoredFile, isCurrent?: () => boolean): Promise<Diagnostic[]> {
+    await this.ensureVersion()
+    const version = this.currentVersion
+    const [builtins, definedFunctions, workspaceFunctions, addonSet] = await Promise.all([
+      this.getBuiltinFunctions(version),
+      this.definedFunctionNames(file.key),
+      this.functionSites(file.key),
+      this.getAddonSet(version)
+    ])
     const variableDiagnostics = collectVariableDiagnostics(this.fileVariables(file), {
       source: DIAGNOSTIC_SOURCE,
       // Genel değişkenler yalnızca tüm çalışma alanı biliniyorsa denetlenir (başka dosya yazıyor olabilir).
@@ -390,6 +407,7 @@ export class SkriptLanguageService {
       versionChecker: this.getVersionChecker(version),
       builtinFunctions: builtins,
       definedFunctions,
+      workspaceFunctions,
       // Verisi olmayan bir addon seçiliyse onun fonksiyonları bilinemez; yanlış uyarı üretilmez.
       checkUndefinedFunctions: (!this.workspaceDeclared || this.workspaceComplete) && !addonSet.missing,
       // Aynı nedenle o addon'un syntax'ı da bilinemez; "anlaşılamayan satır" hatası verilmez.
@@ -397,7 +415,7 @@ export class SkriptLanguageService {
       checkUnknownSyntax: !addonSet.missing && !(await this.getFunctionIndex()).customSyntax,
       isCurrent
     })
-    this.lastDiagnostics.set(key, diagnostics)
+    this.lastDiagnostics.set(file.key, diagnostics)
     return diagnostics
   }
 
@@ -543,6 +561,128 @@ export class SkriptLanguageService {
       matcher,
       entries,
       functions: functions as readonly HoverFunction[]
+    })
+  }
+
+  /** Konumun içinde bulunduğu yapı/olay, o noktada geçerli yerel değişkenler ve dosya options'ları. */
+  async getScopeInfo(uri: string, position: Position): Promise<ScopeInfo | null> {
+    const file = await this.lookupFile(uri)
+    if (!file) return null
+    const structure = findNodePath(file.doc, position)[0]
+    const node = structure?.type === 'structure' ? structure : undefined
+    const index = node ? file.doc.structures.indexOf(node) : -1
+
+    const variables: ScopeInfo['variables'] = []
+    if (index >= 0) {
+      const seen = new Set<string>()
+      for (const occurrence of this.fileVariables(file)) {
+        if (occurrence.scope !== `local:${index}`) continue
+        const name = occurrence.ref.name.trim()
+        if (!name || seen.has(name.toLowerCase())) continue
+        seen.add(name.toLowerCase())
+        variables.push({
+          name,
+          local: true,
+          list: occurrence.ref.list || name.endsWith('::*'),
+          access: occurrence.access
+        })
+      }
+    }
+
+    const options = file.doc.options.slice(0, 100).map((option) => ({
+      name: option.name,
+      value: option.value.trim()
+    }))
+
+    const info: ScopeInfo = {
+      ...(node ? { structure: { kind: node.kind, header: node.header, ...(node.name ? { name: node.name } : {}) } } : {}),
+      variables,
+      options
+    }
+    if (node?.kind === 'event') {
+      await this.ensureVersion()
+      const matcher = await this.getMatcher(this.currentVersion)
+      if (matcher) {
+        const matches = matcher.matchEvent(node.header).slice(0, 3)
+        // Olay değerleri eşleşen kayıtların tümünden toplanır: `on damage` gibi olaylarda
+        // `victim`/`attacker` başka bir kayıtta tanımlı olabiliyor.
+        const seen = new Set<string>()
+        const values: { name: string }[] = []
+        for (const match of matches) {
+          for (const value of match.entry.eventValues ?? []) {
+            if (seen.has(value.name)) continue
+            seen.add(value.name)
+            values.push({ name: value.name })
+          }
+        }
+        info.event = {
+          header: node.header,
+          matches: matches.map((match): ScopeSyntaxRef => ({
+            kind: match.entry.kind,
+            id: match.entry.id,
+            name: match.entry.name,
+            ...(match.entry.addon ? { addon: match.entry.addon } : {})
+          })),
+          values
+        }
+      }
+    }
+    return info
+  }
+
+  /** Bir satırın (0 tabanlı) hangi syntax kaydına uyduğunu, uymadıysa en yakın pattern'leri açıklar. */
+  async explainLine(uri: string, line: number): Promise<LineExplanation | null> {
+    if (!Number.isInteger(line) || line < 0) return null
+    const file = await this.lookupFile(uri)
+    if (!file) return null
+    const context = file.analysis.lines.get(line)
+    return this.explain({
+      line: line + 1,
+      text: context?.text ?? lineAt(file.text, line),
+      context: context && context.kind !== 'skip' ? context.kind : null
+    })
+  }
+
+  /** Henüz dosyada olmayan bir satırı, isteğe bağlı bir başlığın (`on join:`) altında açıklar. */
+  async explainCode(code: string, context?: string): Promise<LineExplanation> {
+    const header = context?.trim()
+    let text = code.trim()
+    let kind: LineContextKind | null = null
+    if (header) {
+      const parsed = await this.parseText(`${header}\n\t${code}`)
+      const line = parsed.analysis.lines.get(1)
+      kind = line && line.kind !== 'skip' ? line.kind : 'statement'
+      if (line) text = line.text
+    } else {
+      const parsed = await this.parseText(code)
+      const line = parsed.analysis.lines.get(0)
+      if (line) {
+        kind = line.kind === 'skip' ? null : line.kind
+        text = line.text
+      } else {
+        kind = /:\s*$/.test(text) ? 'event' : 'statement'
+      }
+    }
+    return this.explain({ line: 1, text, context: kind })
+  }
+
+  private async explain(input: {
+    line: number
+    text: string
+    context: LineContextKind | null
+  }): Promise<LineExplanation> {
+    await this.ensureVersion()
+    const [matcher, entries] = await Promise.all([
+      this.getMatcher(this.currentVersion),
+      this.getEntries(this.currentVersion)
+    ])
+    if (!matcher) throw new ResponseError(0, l('Syntax eşleştiricisi yüklenemedi.', 'Could not load the syntax matcher.'))
+    return explainLineWithMatcher({
+      line: input.line,
+      text: input.text,
+      context: input.context === 'skip' ? null : input.context,
+      matcher,
+      entries
     })
   }
 
@@ -950,6 +1090,28 @@ export class SkriptLanguageService {
     return promise
   }
 
+  /** Fonksiyon tanımları, çalışma alanının ortak köküne göre yollarıyla (imza ve dosya bağımlılığı denetimi için). */
+  private async functionSites(fileKey: string): Promise<ReadonlyMap<string, readonly FunctionSite[]>> {
+    const index = await this.getFunctionIndex()
+    const root = commonDirectory([...this.openDocuments.values(), ...this.workspaceFiles.values()].map((file) => uriPath(file.uri)))
+    const sites = new Map<string, FunctionSite[]>()
+    for (const candidate of index.all) {
+      const full = uriPath(candidate.uri)
+      const path = full.toLowerCase().startsWith(root.toLowerCase()) ? full.slice(root.length) : full.split('/').pop() ?? full
+      const site: FunctionSite = {
+        definition: candidate.definition,
+        path,
+        sameFile: candidate.fileKey === fileKey,
+        disabled: path.split('/').some((segment) => segment.startsWith('-'))
+      }
+      const key = candidate.definition.name.toLowerCase()
+      const list = sites.get(key)
+      if (list) list.push(site)
+      else sites.set(key, [site])
+    }
+    return sites
+  }
+
   private async definedFunctionNames(fileKey: string): Promise<ReadonlySet<string>> {
     const index = await this.getFunctionIndex()
     const names = new Set<string>()
@@ -978,6 +1140,29 @@ export class SkriptLanguageService {
     }
     return variables
   }
+}
+
+/** `file:///C:/x/a%20b.sk` → `C:/x/a b.sk`; çözülemeyen URI olduğu gibi kalır. */
+function uriPath(uri: string): string {
+  const path = uri.replace(/^file:\/\//i, '').replace(/\\/g, '/')
+  try {
+    return decodeURIComponent(path)
+  } catch {
+    return path
+  }
+}
+
+/** Yolların ortak klasörü, sonda `/` ile (büyük/küçük harf duyarsız; Windows yolları için). */
+function commonDirectory(paths: readonly string[]): string {
+  if (paths.length === 0) return ''
+  let common = paths[0].split('/').slice(0, -1)
+  for (const path of paths.slice(1)) {
+    const parts = path.split('/').slice(0, -1)
+    let i = 0
+    while (i < common.length && i < parts.length && common[i].toLowerCase() === parts[i].toLowerCase()) i++
+    common = common.slice(0, i)
+  }
+  return common.length === 0 ? '' : `${common.join('/')}/`
 }
 
 function sameStart(a: Range, b: Range): boolean {

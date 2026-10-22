@@ -14,7 +14,14 @@ packages/corpus/
 │  ├─ SOURCES.json             Her dosyanın repo, yol, commit SHA, lisans ve addon bilgisi
 │  ├─ ground-truth/<sürüm>.json  Gerçek sunucunun `sk reload` sonuçları
 │  └─ report-<sürüm>.json      Statik diagnostics ile ground truth karşılaştırması
+├─ src/
+│  ├─ examples.ts              Chunker ve örnek indeksi biçimi (tipler)
+│  ├─ build.ts                 SOURCES.json + ground truth'tan indeks üretimi
+│  ├─ index.ts                 Paketlenmiş veriyi yükleyen varsayılan okuyucu
+│  └─ node.ts                  Dosya sisteminden okuyan Node yükleyicisi
+├─ data/examples.json          Build-time örnek indeksi (agent `search_examples`)
 └─ tools/
+   ├─ build-examples.ts        data/examples.json'u üretir
    ├─ ground-truth.ts          Corpus'u gerçek sunucuda yükler, referans JSON üretir
    └─ measure.ts               Language server diagnostics'ini ground truth ile karşılaştırır
 ```
@@ -22,6 +29,26 @@ packages/corpus/
 Corpus'ta 79 dosya vardır: **52 vanilla**, **27 addon**. Toplam **14.161 satır**.
 En küçük dosyalar birkaç satır, en büyükleri 1000 satırın üzerindedir
 (`addons/Plutoren--SnapMc/wilderness.sk` 2.379 satır, `vanilla/Plutoren--SnapMc/quests.sk` 1.676 satır).
+
+## Örnek indeksi (`data/examples.json`)
+
+Agent'ın `search_examples` tool'u bu dosyayı kullanır. Her betik, girintisiz üst düzey bloklara
+(`on ...:`, `command /...:`, `function ...:`, `options:` …) ayrılır; bloklar en fazla 60 satırdır,
+daha uzunları kırpılır. Her blok dosya yolu, başlık satırı ve 1 tabanlı satır aralığı taşır;
+lisans, kaynak repo ve gereken addon'lar `SOURCES.json`'dan dosya başına eklenir.
+
+Ground truth'ta hata veren satırları içeren bloklar indekse alınmaz; böylece gerçek sunucuda
+yüklenmeyen kod örnek olarak gösterilmez. Addon dosyaları ground truth'ta olmadığı için yalnızca
+`SOURCES.json` bilgisiyle işaretlenir.
+
+```bash
+npm run build:examples -w @skript-ide/corpus
+```
+
+İndeks üretimi `data/examples.json`'u yeniden yazar; dosya depoya dahildir ve desktop paketlemesine
+girer. Düz Node'da okumak için `@skript-ide/corpus/node`, Vite/paketleyici için `@skript-ide/corpus`
+kullanılır.
+
 
 ## Kaynak ve lisans politikası
 

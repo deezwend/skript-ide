@@ -8,18 +8,32 @@ import type {
   CatalogModel,
   CatalogProvider,
   ContentBlock,
+  ImageBlock,
   Message,
   PermissionMode,
   ProblemReport,
-  ToolCallBlock
+  ToolCallBlock,
+  ToolResultBlock,
+  Todo
 } from '../../shared/ipc'
 import { api } from './api'
 import { monaco } from './monaco'
 
 import { formatMention, isProblemsMention, parseAttachment, parseMentions } from '@skript-ide/agent/src/mentions'
+import { isEditorContext, type EditorContext } from '@skript-ide/agent/src/editor-context'
+import { isConversationSummary } from '@skript-ide/agent/src/compaction'
 import { parseGoal } from '@skript-ide/agent/src/goal'
+import { parseProjectInstructions } from '@skript-ide/agent/src/project-memory'
 import { PERMISSION_MODES } from '@skript-ide/agent/src/permission'
+import { changesDiffStat, type DiffStat } from '@skript-ide/agent/src/diff-stat'
 import { CODEX_PROVIDER_ID } from '@skript-ide/agent/src/codex-catalog'
+import {
+  imageDataUrl,
+  IMAGE_MEDIA_TYPES,
+  isImageMediaType,
+  MAX_IMAGE_BASE64_LENGTH,
+  MAX_IMAGES_PER_MESSAGE
+} from '@skript-ide/agent/src/messages'
 import { l } from '@skript-ide/i18n'
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -27,6 +41,54 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   if (className) node.className = className
   if (text !== undefined) node.textContent = text
   return node
+}
+
+/** Değişiklik miktarı: yeşil `+eklenen`, kırmızı `-silinen` satır. */
+function diffStatBadge({ added, removed }: DiffStat): HTMLElement {
+  const badge = el('span', 'agent-diff-stat')
+  badge.title = l(`${added} satır eklendi, ${removed} satır silindi`, `${added} lines added, ${removed} lines removed`)
+  badge.append(el('span', 'added', `+${added}`), el('span', 'removed', `-${removed}`))
+  return badge
+}
+
+/** Görselin uzun kenarı bundan büyükse küçültülür; sağlayıcılar daha büyüğünü zaten küçültüp sayar. */
+const MAX_IMAGE_SIDE = 1568
+
+/**
+ * Görseli modele gidecek biçime getirir: desteklenmeyen tür, büyük boyut ya da sınırı aşan dosya
+ * tuvalde yeniden çizilir (önce PNG, sığmazsa JPEG). Uygunsa olduğu gibi gönderilir (GIF animasyonu korunur).
+ */
+async function prepareImage(file: Blob): Promise<ImageBlock> {
+  const bitmap = await createImageBitmap(file)
+  try {
+    const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height))
+    if (scale === 1 && isImageMediaType(file.type)) {
+      const data = await blobBase64(file)
+      if (data.length <= MAX_IMAGE_BASE64_LENGTH) return { type: 'image', mediaType: file.type, data }
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    for (const [mediaType, quality] of [['image/png', undefined], ['image/jpeg', 0.85], ['image/jpeg', 0.6]] as const) {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mediaType, quality))
+      if (!blob) continue
+      const data = await blobBase64(blob)
+      if (data.length <= MAX_IMAGE_BASE64_LENGTH) return { type: 'image', mediaType, data }
+    }
+    throw new Error(l('Görsel çok büyük.', 'The image is too large.'))
+  } finally {
+    bitmap.close()
+  }
+}
+
+function blobBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''))
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader'))
+    reader.readAsDataURL(blob)
+  })
 }
 
 /** Tool sonucunun panelde gösterilen en fazla uzunluğu; modele giden sonuç kısaltılmaz. */
@@ -42,6 +104,8 @@ interface SlashCommand {
   /** Argüman varsa kısa gösterimi (`<metin>`); yoksa komut argümansızdır. */
   args?: string
   description: string
+  /** Agent çalışırken de Enter ile gönderilebilir (diğer komutlar turun bitmesini bekler). */
+  whileRunning?: boolean
   run(arg: string): void | Promise<void>
 }
 
@@ -85,6 +149,8 @@ export interface AgentPanelHooks {
   onVisibilityChange(): void
   /** PROBLEMLER sekmesinin o anki içeriği; `@Problems` etiketiyle modele gönderilir. */
   problems(): ProblemReport[]
+  /** Etkin sekme, imleç ve seçim; açık belge yoksa `null`. */
+  editorContext(): EditorContext | null
 }
 
 /**
@@ -108,6 +174,14 @@ export class AgentPanel {
   /** Menü şu an bir `@` etiketini tamamlıyor; liste bu süre boyunca bir kez istenir. */
   private mentionActive = false
   private readonly usageEl = el('div', 'agent-usage')
+  /** Agent'ın `update_todos` planı; sohbetin üstünde kompakt bir liste. */
+  private readonly todoList = el('div', 'agent-todos')
+  /** Bir sonraki mesajla gidecek görseller (yapıştırma, sürükleme ya da dosya seçimiyle eklenir). */
+  private pendingImages: ImageBlock[] = []
+  private readonly imageStrip = el('div', 'agent-image-strip')
+  private btwSeq = 0
+  /** Açık `/btw` kutuları: soru kimliği → kutu ve yanıtın aktığı gövde. */
+  private readonly btwBoxes = new Map<number, { box: HTMLElement; body: HTMLElement; streamed: boolean }>()
 
   constructor(
     private readonly ui: AgentPanelElements,
@@ -120,8 +194,11 @@ export class AgentPanel {
     })
     ui.status.before(this.usageEl)
     this.renderUsage(null)
+    this.todoList.hidden = true
+    ui.form.before(this.todoList)
     this.menu.hidden = true
     ui.form.insertBefore(this.menu, ui.input)
+    this.setupImageInput()
     ui.input.addEventListener('input', () => this.updateMenu())
     ui.input.addEventListener('click', () => this.updateMenu())
     ui.input.addEventListener('blur', () => this.hideMenu())
@@ -148,7 +225,12 @@ export class AgentPanel {
       }
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault()
-        if (!this.running) this.submit()
+        if (!this.running || this.typedCommand()?.whileRunning) this.submit()
+      }
+      // Esc en son açılan `/btw` kutusunu kapatır
+      if (event.key === 'Escape' && this.btwBoxes.size > 0) {
+        event.preventDefault()
+        this.closeBtw([...this.btwBoxes.keys()].at(-1)!)
       }
     })
     ui.newButton.addEventListener('click', () => void this.reset())
@@ -379,6 +461,7 @@ export class AgentPanel {
   private async refreshState(rebuild = false): Promise<void> {
     this.state = await api.agentGetState()
     this.setRunning(this.state.running)
+    this.renderTodos(this.state.todos)
     if (rebuild) {
       this.clearTranscript()
       for (const message of this.state.messages) this.renderMessage(message)
@@ -456,6 +539,19 @@ export class AgentPanel {
     )
   }
 
+  /** Plan listesi: madde durumuna göre işaret; liste boşsa gizlenir. */
+  private renderTodos(todos: readonly Todo[]): void {
+    this.todoList.hidden = todos.length === 0
+    this.todoList.replaceChildren(
+      ...todos.map((todo) => {
+        const row = el('div', `agent-todo ${todo.status}`)
+        const mark = todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '▸' : '○'
+        row.append(el('span', 'agent-todo-mark', mark), el('span', 'agent-todo-text', todo.content))
+        return row
+      })
+    )
+  }
+
   /** Önbellek isabetsizliği: yalnızca gözlemlenebilir nedeni söyler, tahmin yürütmez. */
   private renderCacheMiss(event: Extract<AgentUiEvent, { type: 'cache-miss' }>): void {
     const cost = event.missedCost >= 0.01 ? ` (~${formatCost(event.missedCost)})` : ''
@@ -529,11 +625,97 @@ export class AgentPanel {
     this.ui.panel.classList.toggle('running', running)
   }
 
+  // --- Görseller ---
+
+  private setupImageInput(): void {
+    const { ui } = this
+    this.imageStrip.hidden = true
+    ui.form.insertBefore(this.imageStrip, ui.input)
+    const picker = el('input')
+    picker.type = 'file'
+    picker.accept = IMAGE_MEDIA_TYPES.join(',')
+    picker.multiple = true
+    picker.hidden = true
+    picker.addEventListener('change', () => {
+      void this.addImages([...(picker.files ?? [])])
+      picker.value = ''
+    })
+    const attach = el('button', 'agent-attach', '🖼')
+    attach.type = 'button'
+    attach.title = l('Görsel ekle (yapıştırarak ya da sürükleyerek de eklenebilir)', 'Attach an image (you can also paste or drop one)')
+    attach.addEventListener('click', () => picker.click())
+    ui.status.before(attach, picker)
+    ui.input.addEventListener('paste', (event) => {
+      const files = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith('image/'))
+      if (files.length === 0) return
+      event.preventDefault()
+      void this.addImages(files)
+    })
+    ui.form.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer?.types.includes('Files')) return
+      event.preventDefault()
+      ui.form.classList.add('dragging')
+    })
+    ui.form.addEventListener('dragleave', () => ui.form.classList.remove('dragging'))
+    ui.form.addEventListener('drop', (event) => {
+      ui.form.classList.remove('dragging')
+      const files = [...(event.dataTransfer?.files ?? [])].filter((file) => file.type.startsWith('image/'))
+      if (files.length === 0) return
+      event.preventDefault()
+      void this.addImages(files)
+    })
+  }
+
+  private async addImages(files: File[]): Promise<void> {
+    for (const file of files) {
+      if (this.pendingImages.length >= MAX_IMAGES_PER_MESSAGE) {
+        this.renderNote(
+          l(`Bir mesaja en fazla ${MAX_IMAGES_PER_MESSAGE} görsel eklenebilir.`, `At most ${MAX_IMAGES_PER_MESSAGE} images per message.`),
+          'error'
+        )
+        break
+      }
+      try {
+        this.pendingImages.push(await prepareImage(file))
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : ''
+        this.renderNote(l(`Görsel eklenemedi: ${file.name} ${reason}`, `Could not attach image: ${file.name} ${reason}`).trim(), 'error')
+      }
+    }
+    this.renderImageStrip()
+    this.ui.input.focus()
+  }
+
+  private setPendingImages(images: ImageBlock[]): void {
+    this.pendingImages = images
+    this.renderImageStrip()
+  }
+
+  private renderImageStrip(): void {
+    this.imageStrip.hidden = this.pendingImages.length === 0
+    this.imageStrip.replaceChildren(
+      ...this.pendingImages.map((image, index) => {
+        const item = el('div', 'agent-image-thumb')
+        const img = el('img')
+        img.src = imageDataUrl(image)
+        const remove = el('button', undefined, '✕')
+        remove.type = 'button'
+        remove.title = l('Görseli kaldır', 'Remove image')
+        remove.addEventListener('click', () => {
+          this.pendingImages.splice(index, 1)
+          this.renderImageStrip()
+        })
+        item.append(img, remove)
+        return item
+      })
+    )
+  }
+
   // --- Gönderme ---
 
   private submit(): void {
     const text = this.ui.input.value.trim()
-    if (!text) return
+    if (!text && this.pendingImages.length === 0) return
     this.hideMenu()
     if (text.startsWith('/')) {
       const [word, ...rest] = text.slice(1).split(/\s+/)
@@ -553,13 +735,16 @@ export class AgentPanel {
   }
 
   private send(text: string): void {
+    const images = this.pendingImages
     this.ui.input.value = ''
+    this.setPendingImages([])
     this.setRunning(true)
     const problems = parseMentions(text).some(isProblemsMention) ? this.hooks.problems() : undefined
-    api.agentSend(text, problems).catch((error: Error) => {
-      // Başlamadan reddedildi (model seçilmemiş, anahtar yok…): metni geri koy
+    api.agentSend(text, problems, this.hooks.editorContext(), images).catch((error: Error) => {
+      // Başlamadan reddedildi (model seçilmemiş, anahtar yok, model görsel almıyor…): metni ve görselleri geri koy
       this.setRunning(false)
       this.ui.input.value = text
+      this.setPendingImages(images)
       this.renderNote(error.message, 'error')
       if (!this.state?.settings.modelId || this.state.keySource === 'none') void this.openSettings()
     })
@@ -587,6 +772,16 @@ export class AgentPanel {
         run: () => this.undo()
       },
       {
+        name: 'btw',
+        args: l('<soru>', '<question>'),
+        description: l(
+          'Konuşmayı bölmeden hızlı bir yan soru sorar; yanıt geçmişe eklenmez, agent çalışırken de kullanılabilir',
+          'Asks a quick side question without interrupting; the answer is not added to the history and works while the agent is running'
+        ),
+        whileRunning: true,
+        run: (arg) => this.btw(arg)
+      },
+      {
         name: 'goal',
         args: l('[hedef | clear]', '[goal | clear]'),
         description: l('Konuşma boyunca geçerli bir hedef belirler; yalnız yazarsan mevcut hedefi gösterir', 'Sets a goal for the whole conversation; without arguments shows the current goal'),
@@ -603,6 +798,14 @@ export class AgentPanel {
         args: l('[seviye | default]', '[level | default]'),
         description: l('Düşünme seviyesini (effort) değiştirir', 'Changes the reasoning effort'),
         run: (arg) => this.effort(arg)
+      },
+      {
+        name: 'compact',
+        description: l(
+          'Konuşmanın eski kısmını özetleyerek bağlamı hemen küçültür; önceki turlar artık geri alınamaz',
+          'Compacts the older part of the conversation into a summary; earlier turns can no longer be undone'
+        ),
+        run: () => this.compact()
       },
       {
         name: 'history',
@@ -623,6 +826,12 @@ export class AgentPanel {
   private findCommand(word: string): SlashCommand | undefined {
     const name = word.toLowerCase()
     return this.commands().find((c) => c.name === name || c.aliases?.includes(name))
+  }
+
+  /** Girişte yazılı olan slash komutu; yoksa `undefined`. */
+  private typedCommand(): SlashCommand | undefined {
+    const match = /^\/(\S+)/.exec(this.ui.input.value.trim())
+    return match ? this.findCommand(match[1]) : undefined
   }
 
   private updateMenu(): void {
@@ -740,6 +949,7 @@ export class AgentPanel {
       return
     }
     this.ui.input.value = result.text
+    this.setPendingImages(result.images)
     this.ui.input.focus()
     const parts = [l('Son mesaj geri alındı; metni girişe konuldu.', 'Last message undone; its text is back in the input.')]
     if (result.restored.length) parts.push(l(`Geri alınan dosyalar: ${result.restored.join(', ')}`, `Files restored: ${result.restored.join(', ')}`))
@@ -752,6 +962,67 @@ export class AgentPanel {
       )
     }
     this.renderNote(parts.join('\n'))
+  }
+
+  /** `/compact`: geçmişin eski kısmını hemen özetletir; önceki turların /undo noktaları geçersizleşir. */
+  private async compact(): Promise<void> {
+    if (!this.state?.messages.length) {
+      this.renderNote(l('Sıkıştırılacak konuşma yok.', 'There is no conversation to compact.'))
+      return
+    }
+    this.renderNote(l('Konuşma sıkıştırılıyor…', 'Compacting the conversation…'))
+    const result = await api.agentCompact()
+    this.state = result.state
+    await this.refreshState(true)
+    if (result.summarizedMessages === 0) {
+      this.renderNote(l('Özetlenecek eski mesaj yok.', 'There are no older messages to summarize.'))
+      return
+    }
+    this.renderNote(
+      l(
+        `Konuşma sıkıştırıldı: ${result.summarizedMessages} eski mesaj özetlendi. Bu turdan önceki adımlar artık /undo ile geri alınamaz.`,
+        `Conversation compacted: ${result.summarizedMessages} older messages were summarized. Earlier turns can no longer be undone.`
+      )
+    )
+  }
+
+  /** Yan soru kutusu: yanıt akarken dolar, kapatılınca (✕ ya da Esc) istek iptal edilir ve kutu kalkar. */
+  private async btw(question: string): Promise<void> {
+    if (!question) {
+      this.renderNote(l('Kullanım: /btw <soru>', 'Usage: /btw <question>'))
+      return
+    }
+    this.ui.transcript.querySelector('.agent-empty')?.remove()
+    const id = ++this.btwSeq
+    const box = el('div', 'agent-btw')
+    const head = el('div', 'agent-btw-head')
+    const close = el('button', 'icon-button', '✕')
+    close.type = 'button'
+    close.title = l('Kapat (Esc)', 'Dismiss (Esc)')
+    close.addEventListener('click', () => this.closeBtw(id))
+    head.append(el('span', 'agent-btw-label', '/btw'), el('span', 'agent-btw-question', question), close)
+    const body = el('div', 'agent-btw-body agent-muted', l('Yanıtlıyor…', 'Answering…'))
+    box.append(head, body)
+    this.btwBoxes.set(id, { box, body, streamed: false })
+    this.append(box)
+    try {
+      const answer = await api.agentBtw(id, question)
+      if (!this.btwBoxes.has(id)) return
+      body.className = 'agent-btw-body'
+      body.replaceChildren(...this.assistantText(answer.trim() || l('(boş yanıt)', '(empty answer)')).childNodes)
+    } catch (error) {
+      if (!this.btwBoxes.has(id)) return
+      body.className = 'agent-btw-body agent-note error'
+      body.textContent = (error as Error).message
+    }
+  }
+
+  private closeBtw(id: number): void {
+    const entry = this.btwBoxes.get(id)
+    if (!entry) return
+    this.btwBoxes.delete(id)
+    entry.box.remove()
+    void api.agentBtwCancel(id)
   }
 
   private async goal(arg: string): Promise<void> {
@@ -814,6 +1085,7 @@ export class AgentPanel {
   private async reset(): Promise<void> {
     await api.agentReset()
     this.clearTranscript()
+    this.renderTodos([])
     this.renderEmpty()
     this.setRunning(false)
     this.ui.input.focus()
@@ -879,6 +1151,7 @@ export class AgentPanel {
         this.state = state
         if (wasCurrent) {
           this.clearTranscript()
+          this.renderTodos([])
           this.renderEmpty()
           this.setRunning(false)
         }
@@ -909,7 +1182,7 @@ export class AgentPanel {
         this.toolRows.get(event.call.id)?.classList.add('running')
         break
       case 'tool-result':
-        this.renderToolResult(event.call.id, event.result.content, event.result.isError === true)
+        this.renderToolResult(event.result)
         break
       case 'approval-request':
         this.renderApproval(event.id, event.request)
@@ -925,6 +1198,37 @@ export class AgentPanel {
       case 'file-changed':
         this.hooks.onFileChanged(event.path)
         break
+      case 'btw-delta': {
+        const entry = this.btwBoxes.get(event.id)
+        if (!entry) break
+        if (!entry.streamed) {
+          entry.streamed = true
+          entry.body.className = 'agent-btw-body agent-text'
+          entry.body.textContent = ''
+        }
+        entry.body.append(event.text)
+        break
+      }
+      case 'context-trimmed':
+        this.renderNote(
+          l(
+            `Bağlam dolmak üzereydi; ${event.trimmed} eski tool çıktısı modelin geçmişinden çıkarıldı.`,
+            `The context was nearly full; ${event.trimmed} old tool outputs were removed from the model's history.`
+          )
+        )
+        break
+      case 'context-compacted':
+        this.renderNote(
+          l(
+            `Bağlam sıkıştırıldı: ${event.summarizedMessages} eski mesaj özetlendi. Bu turdan önceki adımlar artık /undo ile geri alınamaz.`,
+            `Conversation compacted: ${event.summarizedMessages} older messages were summarized. Earlier turns can no longer be undone.`
+          )
+        )
+        break
+      case 'todos':
+        if (this.state) this.state.todos = event.todos
+        this.renderTodos(event.todos)
+        break
       case 'done':
         this.finishLive()
         this.setRunning(false)
@@ -932,6 +1236,14 @@ export class AgentPanel {
         if (event.reason === 'error') this.renderNote(event.error ?? l('Bilinmeyen hata', 'Unknown error'), 'error')
         else if (event.reason === 'cancelled') this.renderNote(l('Durduruldu.', 'Stopped.'))
         else if (event.reason === 'max_tokens') this.renderNote(l('Yanıt uzunluk sınırında kesildi.', 'The response was cut off at the length limit.'))
+        else if (event.reason === 'context_full')
+          this.renderNote(
+            l(
+              'Konuşma modelin bağlam penceresine sığmıyor; yeni bir konuşma başlat.',
+              "The conversation no longer fits in the model's context window; start a new conversation."
+            ),
+            'error'
+          )
         else if (event.reason === 'max_turns') this.renderNote(l('Adım sınırına ulaşıldı; devam etmesi için yeniden yaz.', 'Step limit reached; send another message to continue.'))
         else if (event.reason === 'refusal') this.renderNote(l('Model bu isteği yanıtlamayı reddetti.', 'The model declined to answer this request.'))
         break
@@ -941,6 +1253,7 @@ export class AgentPanel {
   // --- Konuşma görünümü ---
 
   private clearTranscript(): void {
+    for (const id of [...this.btwBoxes.keys()]) this.closeBtw(id)
     this.disposeApprovals()
     this.toolRows.clear()
     this.live = null
@@ -969,16 +1282,23 @@ export class AgentPanel {
       const attachment = message.role === 'user' && block.type === 'text' ? parseAttachment(block.text) : null
       // Hedef bloğu yalnızca modele gider; `/goal` zaten not olarak gösteriliyor
       if (message.role === 'user' && block.type === 'text' && parseGoal(block.text) !== undefined) continue
+      // Proje talimatları ve sıkıştırma özeti de yalnızca modele gider
+      if (message.role === 'user' && block.type === 'text' && parseProjectInstructions(block.text) !== undefined) continue
+      if (message.role === 'user' && block.type === 'text' && isConversationSummary(block.text)) continue
+      // Editör bağlamı da yalnızca modele gider
+      if (message.role === 'user' && block.type === 'text' && isEditorContext(block.text)) continue
       if (thought.trim()) {
         this.append(this.reasoningBox(thought, false))
       } else if (attachment) {
         this.append(this.attachmentChip(attachment.path, attachment.content))
       } else if (block.type === 'text' && block.text.trim()) {
         this.append(message.role === 'user' ? this.userBubble(block.text) : this.assistantText(block.text))
+      } else if (block.type === 'image') {
+        this.append(this.imageBubble(block))
       } else if (block.type === 'tool_call') {
         this.append(this.toolRow(block))
       } else if (block.type === 'tool_result') {
-        this.renderToolResult(block.callId, block.content, block.isError === true)
+        this.renderToolResult(block)
       }
     }
   }
@@ -1051,6 +1371,14 @@ export class AgentPanel {
     return bubble
   }
 
+  /** Mesaja eklenen görsel; tıklanınca tam boyutta açılıp kapanır. */
+  private imageBubble(image: ImageBlock): HTMLElement {
+    const img = el('img', 'agent-image')
+    img.src = imageDataUrl(image)
+    img.addEventListener('click', () => img.classList.toggle('expanded'))
+    return img
+  }
+
   /** Mesaja eklenen dosya: kapalı bir kutu, açılınca modele giden içerik görünür. */
   private attachmentChip(path: string, content: string): HTMLElement {
     const box = el('details', 'agent-attachment')
@@ -1094,9 +1422,11 @@ export class AgentPanel {
     return row
   }
 
-  private renderToolResult(callId: string, content: string, isError: boolean): void {
+  private renderToolResult({ callId, content, isError = false, diff }: ToolResultBlock): void {
     const row = this.toolRows.get(callId)
     if (!row) return
+    row.querySelector('.agent-diff-stat')?.remove()
+    if (diff) row.querySelector('summary')!.append(diffStatBadge(diff))
     row.classList.remove('running')
     row.classList.add(isError ? 'error' : 'ok')
     row.querySelector('.agent-tool-icon')!.textContent = isError ? '✕' : '✓'
@@ -1120,27 +1450,46 @@ export class AgentPanel {
 
   private renderApproval(id: number, request: ApprovalRequest): void {
     const card = el('div', 'agent-approval')
-    card.append(el('div', 'agent-approval-title', request.summary))
+    const title = el('div', 'agent-approval-title', request.summary)
+    if (request.changes?.length) title.append(diffStatBadge(changesDiffStat(request.changes)))
+    card.append(title)
 
-    let dispose = () => {}
-    if (request.change) {
-      if (this.hooks.hasUnsavedChanges(request.change.path)) {
+    const disposers: (() => void)[] = []
+    const dispose = () => disposers.splice(0).forEach((fn) => fn())
+    const changes = request.changes ?? []
+    // Taşımada eski yolun silinmesi ayrıca gösterilmez; yeni yolun satırı taşımayı anlatır
+    const movedFrom = new Set(changes.flatMap((change) => (change.movedFrom ? [change.movedFrom] : [])))
+    for (const change of changes) {
+      if (change.deleted && movedFrom.has(change.path)) continue
+      if (changes.length > 1 || change.deleted || change.movedFrom) {
+        const label = change.movedFrom
+          ? `${change.movedFrom} → ${change.path}`
+          : change.deleted
+            ? l(`${change.path} silinecek`, `${change.path} will be deleted`)
+            : change.created
+              ? l(`${change.path} (yeni)`, `${change.path} (new)`)
+              : change.path
+        card.append(el('div', 'agent-approval-file', label))
+      }
+      if (this.hooks.hasUnsavedChanges(change.path)) {
         card.append(
           el(
             'div',
             'agent-approval-warning',
             l(
-              '⚠ Bu dosyada kaydedilmemiş değişikliklerin var. Agent diskteki sürümü düzenler; sekme yeniden yüklenmez.',
-              '⚠ This file has unsaved changes. The agent edits the version on disk; the tab will not be reloaded.'
+              '⚠ Bu dosyada kaydedilmemiş değişikliklerin var. Agent diskteki sürümü düzenler; sekme bu sürümle değişir, kendi değişikliklerini Ctrl+Z ile geri alabilirsin.',
+              '⚠ This file has unsaved changes. The agent edits the version on disk; the tab is replaced with it, and Ctrl+Z brings your changes back.'
             )
           )
         )
       }
+      // Silinen ve olduğu gibi taşınan dosyanın içeriği değişmez; diff gösterilmez
+      if (change.deleted || change.movedFrom) continue
       const host = el('div', 'agent-diff')
       card.append(host)
-      const language = this.hooks.languageForPath(request.change.path)
-      const original = monaco.editor.createModel(request.change.before, language)
-      const modified = monaco.editor.createModel(request.change.after, language)
+      const language = this.hooks.languageForPath(change.path)
+      const original = monaco.editor.createModel(change.before, language)
+      const modified = monaco.editor.createModel(change.after, language)
       const diff = monaco.editor.createDiffEditor(host, {
         readOnly: true,
         renderSideBySide: false,
@@ -1154,11 +1503,11 @@ export class AgentPanel {
         fontSize: 12
       })
       diff.setModel({ original, modified })
-      dispose = () => {
+      disposers.push(() => {
         diff.dispose()
         original.dispose()
         modified.dispose()
-      }
+      })
     }
 
     const actions = el('div', 'agent-approval-actions')

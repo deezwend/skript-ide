@@ -31,7 +31,15 @@ function makeServer(result: Partial<ValidationResult>, eula = true): FakeServer 
     validate: async (source, fileName, content) => {
       calls.push({ source, fileName, content })
       return { source, stagedName: fileName, diagnostics: [], ok: true, durationMs: 1200, ...result }
-    }
+    },
+    runCommands: async (commands) => ({
+      output: [`ran ${commands.join(', ')}`],
+      timedOut: false,
+      durationMs: 10,
+      acknowledged: true,
+      matchedUntil: false
+    }),
+    readLog: () => []
   }
 }
 
@@ -149,3 +157,31 @@ test('get_project_info proje dosyası yoksa varsayılanları söyler', () =>
     assert.match(result, /skript-project\.json: not found/)
     assert.match(result, /Addons: none/)
   }))
+
+test("search_syntax eşleşme bulamazsa seçili olmayan addon'larda arar ve not installed der", async () => {
+  const ctx = { ...makeContext(), languageService: makeService() }
+  const result = await tool('search_syntax').execute({ query: 'raytrace' }, ctx)
+  assert.match(result, /^No syntax matches "raytrace" in Skript 2\.17\.1\./)
+  assert.match(result, /Not available in this project \(addon not installed\):/)
+  assert.match(result, /SkBee 3\.26\.0, not installed/)
+  assert.match(result, /suggest installing the addon instead/)
+
+  const both = await tool('search_syntax').execute({ query: 'gui', include_unselected_addons: true }, ctx)
+  assert.match(both, /results in Skript 2\.17\.1:/)
+  assert.match(both, /Not available in this project/)
+})
+
+test("search_syntax seçili addon'u not installed bölümüne koymaz", async () => {
+  const ctx = { ...makeContext(), languageService: makeService([{ name: 'SkBee', version: '3.26.0' }]) }
+  const result = await tool('search_syntax').execute({ query: 'raytrace' }, ctx)
+  assert.match(result, /^8 results in Skript 2\.17\.1 \+ SkBee:\n\[expression\] RayTrace/)
+  assert.doesNotMatch(result, /Not available in this project/)
+  assert.doesNotMatch(result, /not installed/)
+})
+
+test("get_syntax_docs seçili olmayan addon kaydını not installed diye gösterir", async () => {
+  const ctx = { ...makeContext(), languageService: makeService() }
+  const docs = await tool('get_syntax_docs').execute({ kind: 'expression', id: 'ExprRayTraceFromEntity' }, ctx)
+  assert.match(docs, /^not installed in this project: SkBee 3\.26\.0 \(add this addon to use it\)\n\n# \[expression\]/)
+  assert.match(docs, /\nPatterns:\n/)
+})

@@ -58,6 +58,10 @@ Sunucu tarafında `startServer(connection, options)` tüm LSP handler'larını b
 |---|---|---|
 | `parse/<parser-kodu>` | Parser'ın sözdizimsel tanısı (ör. `parse/unclosed-string`, `parse/indent-mixed`) | Parser'ın verdiği önem |
 | `undefined-function` | Çağrılan ad ne çalışma alanında (bu dosya + diğer dosyalar, `local function` yalnızca kendi dosyasında) ne de seçili sürümün yerleşik fonksiyonlarında var | warning |
+| `function-arguments` | Çalışma alanındaki bir fonksiyona imzasından az ya da çok argüman verilmiş (tek parametreli fonksiyonlarda ve `and` listelerinde denetlenmez) | error |
+| `function-argument-type` | Sayı/konum/varlık gibi bir parametreye metin sabiti (`"..."`) verilmiş | error |
+| `function-disabled-file` | Fonksiyon yalnızca Skript'in yüklemediği, adı `-` ile başlayan bir dosyada/klasörde tanımlı | error |
+| `function-other-file` | Fonksiyon başka bir dosyada tanımlı; bu dosya oyunda tek başına yüklenirse önce o dosya yüklü olmalı (fonksiyon başına bir kez) | information |
 | `undefined-option` | `{@ad}` bu dosyanın `options:` bölümünde tanımlı değil (option'lar dosyaya özeldir) | warning |
 | `version-syntax` | Satır seçili sürümde hiçbir kayda (exact/structural) uymuyor, başka bir sürümde `exact` uyuyor | warning |
 | `unknown-syntax` | Satır seçili sürümde hiçbir kayda (structural dahil) uymuyor; başka sürümde ya da bilinen bir addon'da da `exact` karşılığı yok. Ayrıca üst düzeyde `if …:`, `loop …:`, `trigger:` gibi yalnızca gövdede geçerli başlıklar | error |

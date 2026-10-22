@@ -620,6 +620,35 @@ body.window-inactive .titlebar-icon {
   background: var(--bg-selected);
 }
 
+#explorer:focus {
+  outline: none;
+}
+
+#explorer:focus .tree-row.selected {
+  outline: 1px solid var(--accent-hover);
+  outline-offset: -1px;
+}
+
+.tree-row.cut .tree-name {
+  opacity: 0.5;
+}
+
+.tree-row.editing {
+  cursor: default;
+}
+
+.tree-input {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--accent-hover);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
 .tree-icon {
   flex: none;
   width: 16px;
@@ -721,8 +750,12 @@ body.window-inactive .titlebar-icon {
 #main {
   display: grid;
   grid-template-rows: 35px minmax(0, 1fr) var(--panel-height);
+  /* Örtük `auto` sütun içerik genişliğine (ör. problem satırları) göre büyüyüp
+     editörü agent panelinin üstüne taşırıyordu; sütunu kapsayıcıya sabitle. */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 #tabs {
@@ -1446,8 +1479,11 @@ button.migration-location {
 }
 
 #agent-panel {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   background: var(--bg-sidebar);
   border-left: 1px solid var(--border);
@@ -1676,6 +1712,27 @@ button.migration-location {
   text-overflow: ellipsis;
 }
 
+.agent-diff-stat {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+}
+
+.agent-approval-title .agent-diff-stat {
+  margin-left: 8px;
+}
+
+.agent-diff-stat .added {
+  color: #89d185;
+}
+
+.agent-diff-stat .removed {
+  color: var(--error);
+}
+
 .agent-tool.running .agent-tool-icon {
   animation: agent-pulse 1s ease-in-out infinite;
 }
@@ -1749,6 +1806,39 @@ button.migration-location {
   font-style: normal;
 }
 
+.agent-btw {
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.agent-btw-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.agent-btw-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.agent-btw-question {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.agent-btw-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .agent-approval {
   padding: 8px;
   border: 1px solid var(--accent);
@@ -1766,6 +1856,13 @@ button.migration-location {
   font-weight: 600;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.agent-approval-file {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  word-break: break-all;
 }
 
 .agent-approval-warning {
@@ -1825,6 +1922,68 @@ button.migration-location {
 
 #agent-input:focus {
   outline: 1px solid var(--accent);
+}
+
+#agent-form.dragging #agent-input {
+  outline: 1px dashed var(--accent);
+}
+
+.agent-image-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.agent-image-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.agent-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.agent-image-thumb button {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.agent-composer-bar button.agent-attach {
+  padding: 2px 8px;
+  background: transparent;
+}
+
+.agent-image {
+  align-self: flex-end;
+  max-width: 60%;
+  max-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: zoom-in;
+}
+
+.agent-image.expanded {
+  max-width: 100%;
+  max-height: none;
+  cursor: zoom-out;
 }
 
 .agent-quick {
@@ -2110,4 +2269,48 @@ button.migration-location {
 .agent-note.warning {
   color: var(--warning);
   font-style: normal;
+}
+
+/* Agent'ın update_todos planı: sohbet ile giriş arasında kompakt liste */
+.agent-todos {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 3px;
+  overflow: auto;
+  max-height: 132px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.agent-todo {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.agent-todo-mark {
+  flex: none;
+  width: 12px;
+  text-align: center;
+}
+
+.agent-todo-text {
+  overflow-wrap: anywhere;
+}
+
+.agent-todo.in_progress {
+  color: var(--text);
+}
+
+.agent-todo.in_progress .agent-todo-mark {
+  color: var(--accent);
+}
+
+.agent-todo.completed .agent-todo-text {
+  opacity: 0.7;
+  text-decoration: line-through;
 }

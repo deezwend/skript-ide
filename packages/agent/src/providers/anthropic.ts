@@ -96,7 +96,7 @@ export function toAnthropicParams(
 }
 
 /** Önbellek işareti alabilen bloklar; düşünme blokları alamaz. */
-const CACHEABLE_BLOCKS = new Set(['text', 'tool_use', 'tool_result'])
+const CACHEABLE_BLOCKS = new Set(['text', 'image', 'tool_use', 'tool_result'])
 
 /**
  * Son mesajın işaret alabilen son bloğuna `cache_control` koyar. Girdi değiştirilmez;
@@ -121,6 +121,9 @@ export function toAnthropicMessages(messages: readonly Message[], providerId: st
         case 'text':
           // API boş metin bloğunu reddeder
           if (block.text !== '') content.push({ type: 'text', text: block.text })
+          break
+        case 'image':
+          content.push({ type: 'image', source: { type: 'base64', media_type: block.mediaType, data: block.data } })
           break
         case 'tool_call':
           content.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input })

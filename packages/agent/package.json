@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
+    "@skript-ide/corpus": "*",
     "@skript-ide/runtime-validator": "*",
     "@skript-ide/syntax-db": "*"
   }

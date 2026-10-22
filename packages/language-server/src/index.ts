@@ -19,6 +19,13 @@ export {
 } from './diagnostics'
 export { SEMANTIC_TOKENS_LEGEND } from './semantic-tokens'
 export type {
+  ExplainedCandidate,
+  ExplainedMatch,
+  ExplainedPlaceholder,
+  LineExplanation
+} from './explain'
+export type { ScopeInfo, ScopeSyntaxRef } from './scope'
+export type {
   MigrationEntryRef,
   MigrationFix,
   MigrationItem,

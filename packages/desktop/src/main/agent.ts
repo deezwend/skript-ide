@@ -1,7 +1,7 @@
 import { app, ipcMain, safeStorage, shell, type BrowserWindow } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   coreTools,
   createSkriptTools,
@@ -11,23 +11,39 @@ import {
   codexModelsUrl,
   CODEX_FALLBACK_MODELS,
   CODEX_PROVIDER_ID,
+  compactMessages,
   createProvider,
   emptyUsage,
   DEFAULT_PERMISSION_MODE,
   estimateContextTokens,
   estimateTextTokens,
   fetchCatalog,
+  EDITOR_CONTEXT_INSTRUCTIONS,
+  GEOMETRY_INSTRUCTIONS,
+  geometryTools,
+  editorContextText,
   GOAL_INSTRUCTIONS,
   goalUpdate,
+  PROJECT_MEMORY_INSTRUCTIONS,
+  SKRIPT_GUIDE,
+  todoTool,
+  isConversationSummary,
+  isEditorContext,
   isPermissionMode,
   isProblemsMention,
+  latestTodos,
   listProjectFiles,
+  loadProjectMemory,
   needsRefresh,
   parseAttachment,
   parseCodexModels,
+  parseEditorContextInput,
   parseGoal,
+  parseImageInput,
   parseMentions,
+  parseProjectInstructions,
   problemsAttachmentText,
+  projectMemoryUpdate,
   promptTokens,
   ProviderError,
   readMentions,
@@ -38,6 +54,9 @@ import {
   ToolRegistry,
   toolCalls,
   type ApprovalRequest,
+  type EditorContext,
+  type FileChange,
+  type ImageBlock,
   type CallUsage,
   type CatalogModel,
   type CatalogProvider,
@@ -55,6 +74,7 @@ import type { SkriptServer } from '@skript-ide/runtime-validator'
 import { loadSyntaxDatabase } from '@skript-ide/syntax-db'
 import {
   IpcChannel,
+  type AgentCompactResult,
   type AgentSessionInfo,
   type AgentSettings,
   type AgentState,
@@ -69,6 +89,8 @@ import { getProjectState } from './project'
 
 /** Katalog bundan eskiyse açılışta yeniden indirilir. */
 const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** Ayrıştırılan katalog biçimi değişince artar; eski sürümle yazılmış önbellek yeniden indirilir. */
+const CATALOG_CACHE_VERSION = 2
 
 interface StoredAgentFile extends AgentSettings {
   /** Sağlayıcı kimliği → `safeStorage` ile şifrelenmiş anahtarın base64'ü. */
@@ -80,6 +102,7 @@ interface StoredAgentFile extends AgentSettings {
 }
 
 interface CatalogCache {
+  version?: number
   fetchedAt: number
   providers: CatalogProvider[]
 }
@@ -106,8 +129,11 @@ interface SessionUsage {
 /** `/undo` için: bir kullanıcı mesajından önceki geçmiş uzunluğu ve o turda agent'ın yazdığı dosyalar. */
 interface Checkpoint {
   baseLength: number
-  /** Mutlak yol → dosyanın turdan önceki içeriği ve agent'ın bıraktığı son içerik. */
-  files: Map<string, { path: string; original: string; current: string }>
+  /**
+   * Mutlak yol → dosyanın turdan önceki içeriği ve agent'ın bıraktığı son içerik.
+   * `original: null`: agent oluşturdu; `current: null`: agent sildi (ya da başka yere taşıdı).
+   */
+  files: Map<string, { path: string; original: string | null; current: string | null }>
 }
 
 const sessionsDir = () => join(app.getPath('userData'), 'agent-sessions')
@@ -123,7 +149,7 @@ const catalogPath = () => join(app.getPath('userData'), 'agent-catalog.json')
  * Arayüz mesaj gönderir, olayları `agent:event` kanalından izler, yazma işlemlerini onaylar.
  */
 export function setupAgent(getWindow: () => BrowserWindow | null, server: SkriptServer): void {
-  const registry = new ToolRegistry([...coreTools, ...createSkriptTools()])
+  const registry = new ToolRegistry([...coreTools, ...createSkriptTools(), ...geometryTools, todoTool])
   // Arayüzdeki dil sunucusu worker'ından ayrı bir örnek: agent dosyaları diskten okur, editörün
   // kaydedilmemiş belgeleriyle karışmaz. Sürüm ve addon'lar her mesajda projeye göre ayarlanır.
   const languageService = new SkriptLanguageService({ loadDatabase: loadSyntaxDatabase })
@@ -139,11 +165,17 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
   let goal: string | null = null
   /** Çağrı bazlı kullanım; önbellek analizi ve `/usage` dökümü bundan türetilir. */
   let calls: CallUsage[] = []
+  /** Sıkıştırmadan sonra son çağrının kesin ölçümü eski geçmişi anlatır; yeni çağrıya kadar tahmin kullanılır. */
+  let measurementStale = false
   /** Çağrı kaydı olmayan eski konuşmaların toplamı; yeni konuşmalarda `undefined`. */
   let legacyUsage: SessionUsage | undefined
   /** Yalnızca bellekte: uygulama kapanınca ya da konuşma değişince `/undo` dosyaları geri alamaz. */
   let checkpoints: Checkpoint[] = []
   let controller: AbortController | null = null
+  /** Tur sürerken o ana kadarki geçmiş; `/btw` turu beklemeden buna göre yanıtlar. */
+  let liveHistory: (() => Message[]) | null = null
+  /** Süren `/btw` soruları; panelde kapatılınca iptal edilir. */
+  const btwControllers = new Map<number, AbortController>()
   /** Açık ChatGPT giriş denemesi; ikinci bir giriş aynı bağlantı noktasını beklemesin. */
   let codexLogin: AbortController | null = null
   let nextApprovalId = 1
@@ -245,6 +277,8 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
   async function readCatalogCache(): Promise<CatalogCache | null> {
     try {
       const raw = JSON.parse(await readFile(catalogPath(), 'utf8')) as CatalogCache
+      // Eski sürümün önbelleğinde önbellek fiyatları (`cacheRead`) eksik olabilir
+      if (raw.version !== CATALOG_CACHE_VERSION) return null
       return Array.isArray(raw.providers) && typeof raw.fetchedAt === 'number' ? raw : null
     } catch {
       return null
@@ -268,7 +302,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     catalogLoading ??= (async () => {
       try {
         const providers = await fetchCatalog(AbortSignal.timeout(30_000))
-        catalog = { fetchedAt: Date.now(), providers }
+        catalog = { version: CATALOG_CACHE_VERSION, fetchedAt: Date.now(), providers }
         await writeFile(catalogPath(), JSON.stringify(catalog), 'utf8')
         return providers
       } catch (error) {
@@ -475,6 +509,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
       encryptionAvailable: safeStorage.isEncryptionAvailable(),
       codex: codexStatus(),
       goal,
+      todos: latestTodos(messages),
       usage: usageSummary()
     }
   }
@@ -513,7 +548,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
    * mesajların tahmini. Çalışırken `messages` bu turun istemini de içerdiği için tahmin eklenmez.
    */
   function contextTokens(): number {
-    const last = calls.at(-1)
+    const last = measurementStale ? undefined : calls.at(-1)
     if (!last) {
       const project = getProjectState()
       const system = systemPrompt(project.root, project.settings.skriptVersion, project.settings.addons ?? [])
@@ -523,7 +558,19 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     return estimateContextTokens(controller ? [] : messages, last)
   }
 
+  /**
+   * Çağrı maliyetlerini güncel katalog fiyatıyla yeniden hesaplar; eksik fiyatla (ör. `cacheRead`
+   * olmadan) kaydedilmiş eski çağrılar da düzelir. Fiyatı katalogda olmayan çağrı olduğu gibi kalır.
+   */
+  function repriceCalls(): void {
+    for (const call of calls) {
+      const price = priceOf(call)
+      if (price) call.cost = calculateCost(call.tokens, price)
+    }
+  }
+
   function usageSummary(): AgentUsage {
+    repriceCalls()
     const total = sessionTotal()
     const last = calls.at(-1)
     const prompt = total.tokens.input + total.tokens.cacheRead + total.tokens.cacheWrite
@@ -570,6 +617,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
   /** Çağrıyı kaydeder; anlamlı bir önbellek isabetsizliği varsa arayüze bildirir. */
   function noteCall(call: CallUsage): void {
     calls.push(call)
+    measurementStale = false
     const miss = scanCacheMisses(calls, priceOf).misses.get(call)
     if (!miss) return
     if (miss.missedTokens < CACHE_MISS_MIN_TOKENS && miss.missedCost < CACHE_MISS_MIN_COST) return
@@ -598,9 +646,8 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     })
   }
 
-  async function run(text: string, problems: ProblemReport[] = []): Promise<void> {
-    await loaded
-    if (controller) throw new Error(l('Agent zaten çalışıyor.', 'The agent is already running.'))
+  /** Seçili model ve kimlik bilgisi; eksikse kullanıcıya gösterilecek hatayı fırlatır. */
+  async function connect(): Promise<{ provider: CatalogProvider; model: CatalogModel; apiKey: string; subscription: boolean }> {
     const { provider, model } = await findSelection()
     // `codex` protokolü API anahtarı değil ChatGPT oturumu ister
     const subscription = model.protocol === 'codex'
@@ -621,6 +668,26 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
         )
       )
     }
+    return { provider, model, apiKey, subscription }
+  }
+
+  async function run(
+    text: string,
+    problems: ProblemReport[] = [],
+    editor: EditorContext | null = null,
+    images: ImageBlock[] = []
+  ): Promise<void> {
+    await loaded
+    if (controller) throw new Error(l('Agent zaten çalışıyor.', 'The agent is already running.'))
+    const { provider, model, apiKey, subscription } = await connect()
+    if (images.length && model.images === false) {
+      throw new Error(
+        l(
+          `${model.name} görsel kabul etmiyor. Görseli kaldır ya da görsel destekleyen bir model seç.`,
+          `${model.name} does not accept images. Remove the image or pick a model that supports images.`
+        )
+      )
+    }
 
     const project = getProjectState()
     // Skript tool'ları projenin o anki sürümü ve addon'larıyla çalışsın
@@ -636,27 +703,37 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     // Hedef sistem istemine değil, değiştiği ilk mesaja eklenir; geçmiş yalnızca büyür, önbellek korunur
     const goalBlock = goalUpdate(messages, goal)
     if (goalBlock) attachments.push({ type: 'text', text: goalBlock })
-    const userMessage: Message = { role: 'user', content: [...textMessage('user', text).content, ...attachments] }
+    // Proje talimatları da aynı desenle yalnızca değiştiğinde mesaja eklenir
+    const memoryBlock = projectMemoryUpdate(messages, await loadProjectMemory(project.root))
+    if (memoryBlock) attachments.push({ type: 'text', text: memoryBlock })
+    if (editor) {
+      const path = editor.untitled ? editor.path : projectPath(project.root, editor.path)
+      attachments.push({ type: 'text', text: editorContextText({ ...editor, path }) })
+    }
+    const userMessage: Message = { role: 'user', content: [...textMessage('user', text).content, ...images, ...attachments] }
     const checkpoint: Checkpoint = { baseLength: messages.length, files: new Map() }
     checkpoints.push(checkpoint)
     const history = [...messages, userMessage]
     messages = history
-    session ??= { id: randomUUID(), title: titleFrom(text), projectRoot: project.root }
+    session ??= { id: randomUUID(), title: titleFrom(text || l('Görsel', 'Image')), projectRoot: project.root }
     void persistSession()
     send({ type: 'user-message', message: userMessage })
 
+    // Önceki çağrının kesin kullanımına dayanır; tur başlayınca (controller varken) hesap değişir
+    const initialTokens = calls.length ? contextTokens() : undefined
+    const contextWindow = model.contextWindow ?? 0
     controller = new AbortController()
     const signal = controller.signal
     // Bu turun numarası: çağrılar buna göre gruplanır, `/undo` geri alırken bununla kırpar
-    const turn = countTurns(history)
+    let turn = countTurns(history)
     // Hata ya da iptalde de konuşmanın tutarlı kalması için olaylardan izlenen geçmiş
     const tracked = [...history]
-    let pendingChange: ApprovalRequest['change'] | undefined
     let pendingResults: ToolResultBlock[] = []
     const flushResults = () => {
       if (pendingResults.length) tracked.push({ role: 'user', content: pendingResults })
       pendingResults = []
     }
+    liveHistory = () => (pendingResults.length ? [...tracked, { role: 'user', content: [...pendingResults] }] : [...tracked])
 
     try {
       const result = await runAgent({
@@ -670,15 +747,15 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
         permissionMode: () => permissionMode,
         system: systemPrompt(project.root, project.settings.skriptVersion, project.settings.addons ?? []),
         messages: history,
+        contextLimits: { window: contextWindow, initialTokens },
         context: {
           projectRoot: project.root,
           signal,
           languageService,
           server,
-          requestApproval: (request) => {
-            pendingChange = request.change
-            return requestApproval(request, signal)
-          }
+          requestApproval: (request) => requestApproval(request, signal),
+          onFilesChanged: (changes) => recordChanges(checkpoint, project.root, changes),
+          onTodosChanged: (todos) => send({ type: 'todos', todos: [...todos] })
         },
         onEvent: (event) => {
           if (event.type === 'assistant-message') {
@@ -696,23 +773,33 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
             })
             send({ type: 'usage', usage: usageSummary() })
             void persistSession()
+          } else if (event.type === 'context-trimmed') {
+            // Kısaltılmış geçmiş bekleyen tool sonuçlarını da içerir
+            pendingResults = []
+            tracked.splice(0, tracked.length, ...event.messages)
+            send({ type: 'context-trimmed', trimmed: event.trimmed })
+          } else if (event.type === 'context-compacted') {
+            // Özet, eski tur açıklamalarını da kapsar: bekleyen sonuçlar ve /undo noktaları yeni geçmişe taşınır
+            const removedTurns = countTurns(tracked.slice(0, event.summarizedMessages))
+            pendingResults = []
+            tracked.splice(0, tracked.length, ...event.messages)
+            checkpoints = checkpoints.filter((point) => {
+              // Eski indeks yeni geçmişe taşınır: başa bir özet mesajı eklendiği için +1
+              if (point.baseLength < event.summarizedMessages) return false
+              point.baseLength = point.baseLength - event.summarizedMessages + 1
+              return true
+            })
+            // Özete giren turlar geri alınamaz; kalan çağrılar yeni tur numaralarına kaydırılır
+            for (const call of calls) call.turn -= removedTurns
+            turn -= removedTurns
+            measurementStale = true
+            send({ type: 'context-compacted', summarizedMessages: event.summarizedMessages })
+            void persistSession()
           } else if (event.type === 'delta' || event.type === 'tool-start') {
             send(event)
           } else if (event.type === 'tool-result') {
             pendingResults.push(event.result)
             send(event)
-            const path = changedPath(event.call.name, event.call.input, event.result, project.root)
-            if (path) {
-              if (pendingChange) {
-                const known = checkpoint.files.get(path)
-                checkpoint.files.set(path, {
-                  path: pendingChange.path,
-                  original: known?.original ?? pendingChange.before,
-                  current: pendingChange.after
-                })
-              }
-              send({ type: 'file-changed', path })
-            }
           }
         }
       })
@@ -725,8 +812,115 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
       else send({ type: 'done', reason: 'error', error: (error as Error).message })
     } finally {
       controller = null
+      liveHistory = null
       pendingApprovals.clear()
       void persistSession()
+    }
+  }
+
+  /**
+   * `/btw`: konuşmanın o anki bağlamıyla tek bir yan soru sorar. Tool çalıştırılmaz, soru ve yanıt
+   * geçmişe eklenmez; tur sürerken de sorulabilir. Sistem istemi ve tool tanımları aynı tutulur
+   * ki konuşmanın önbelleği okunsun. Kullanım konuşmanın toplamına eklenir.
+   */
+  async function btw(id: number, question: string): Promise<string> {
+    await loaded
+    if (!question.trim()) throw new Error(l('Soru boş.', 'The question is empty.'))
+    const { provider, model, apiKey, subscription } = await connect()
+    const project = getProjectState()
+    const history = closeDanglingToolCalls(liveHistory?.() ?? messages, 'Still running; the result is not available yet.')
+    const ask = textMessage('user', `${BTW_PREFIX}\n\n${question.trim()}`)
+    // Tur sürerken geçmiş kullanıcı mesajıyla (tool sonuçları) bitebilir; art arda iki kullanıcı mesajı gönderilmez
+    const last = history.at(-1)
+    const request =
+      last?.role === 'user' ? [...history.slice(0, -1), { role: 'user' as const, content: [...last.content, ...ask.content] }] : [...history, ask]
+    const btwController = new AbortController()
+    btwControllers.set(id, btwController)
+    try {
+      const response = await createProvider(provider, model, {
+        apiKey,
+        effort: stored.effort ?? undefined,
+        codexAuth: subscription ? codexAuth : undefined,
+        sessionId: session?.id
+      }).complete({
+        system: systemPrompt(project.root, project.settings.skriptVersion, project.settings.addons ?? []),
+        messages: request,
+        tools: registry.definitions(),
+        signal: btwController.signal,
+        onDelta: (delta) => {
+          if (delta.kind === 'text') send({ type: 'btw-delta', id, text: delta.text })
+        }
+      })
+      if (response.usage) {
+        noteCall({
+          at: Date.now(),
+          providerId: provider.id,
+          modelId: model.id,
+          turn: countTurns(messages),
+          tokens: response.usage,
+          cost: calculateCost(response.usage, model.cost)
+        })
+        send({ type: 'usage', usage: usageSummary() })
+        void persistSession()
+      }
+      // Model yine de tool isterse çağrılar yok sayılır; yalnızca metin gösterilir
+      return response.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('')
+    } finally {
+      btwControllers.delete(id)
+    }
+  }
+
+  /** `/compact`: geçmişin eski kısmını hemen özetler. Çalışan bir tur varsa önce durdurulur. */
+  async function compact(): Promise<AgentCompactResult> {
+    await settle()
+    if (messages.length === 0) return { state: await state(), summarizedMessages: 0 }
+    const { provider, model, apiKey, subscription } = await connect()
+    const turn = countTurns(messages)
+    const result = await compactMessages(
+      createProvider(provider, model, {
+        apiKey,
+        effort: stored.effort ?? undefined,
+        codexAuth: subscription ? codexAuth : undefined,
+        sessionId: session?.id
+      }),
+      messages,
+      {
+        signal: new AbortController().signal,
+        onUsage: (tokens) =>
+          noteCall({
+            at: Date.now(),
+            providerId: provider.id,
+            modelId: model.id,
+            turn,
+            tokens,
+            cost: calculateCost(tokens, model.cost)
+          })
+      }
+    )
+    if (!result) return { state: await state(), summarizedMessages: 0 }
+    const removedTurns = countTurns(messages.slice(0, result.summarized))
+    messages = result.messages
+    measurementStale = true
+    // Özete giren turların kullanımı da yeni tur numaralarına kaydırılır; geri alınamazlar
+    for (const call of calls) call.turn -= removedTurns
+    checkpoints = []
+    if (result.usage) send({ type: 'usage', usage: usageSummary() })
+    void persistSession()
+    return { state: await state(), summarizedMessages: result.summarized }
+  }
+
+  /** Tool'un yazdığı dosyaları turun geri alma noktasına işler ve açık sekmelerin yenilenmesini ister. */
+  function recordChanges(checkpoint: Checkpoint, root: string | null, changes: readonly FileChange[]): void {
+    if (!root) return
+    for (const change of changes) {
+      const file = resolve(root, change.path)
+      const known = checkpoint.files.get(file)
+      checkpoint.files.set(file, {
+        path: change.path,
+        original: known ? known.original : change.created ? null : change.before,
+        current: change.deleted ? null : change.after
+      })
+      send({ type: 'file-changed', path: file })
     }
   }
 
@@ -741,19 +935,24 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     await settle()
     const checkpoint = checkpoints.pop()
     let baseLength = checkpoint ? Math.min(checkpoint.baseLength, messages.length) : -1
-    if (baseLength < 0) baseLength = messages.findLastIndex((m) => m.role === 'user' && m.content.some((b) => b.type === 'text'))
+    if (baseLength < 0) baseLength = messages.findLastIndex(isUserTextMessage)
     const removed = baseLength >= 0 ? messages[baseLength] : undefined
     const restored: string[] = []
     const skipped: string[] = []
-    if (!removed) return { state: await state(), text: null, restored, skipped }
+    if (!removed) return { state: await state(), text: null, images: [], restored, skipped }
 
     for (const [file, entry] of checkpoint?.files ?? []) {
       try {
-        if ((await readFile(file, 'utf8')) !== entry.current) {
+        if ((await readIfExists(file)) !== entry.current) {
           skipped.push(entry.path)
           continue
         }
-        await writeFile(file, entry.original, 'utf8')
+        if (entry.original === null) {
+          await rm(file, { force: true })
+        } else {
+          await mkdir(dirname(file), { recursive: true })
+          await writeFile(file, entry.original, 'utf8')
+        }
         restored.push(entry.path)
         send({ type: 'file-changed', path: file })
       } catch {
@@ -761,7 +960,18 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
       }
     }
     // Eklenen dosya içerikleri girişe geri konmaz; `@etiket`ler metinde zaten duruyor
-    const text = removed.content.flatMap((b) => (b.type === 'text' && !parseAttachment(b.text) && parseGoal(b.text) === undefined ? [b.text] : [])).join('\n')
+    const text = removed.content
+      .flatMap((b) =>
+        b.type === 'text' &&
+        !parseAttachment(b.text) &&
+        parseGoal(b.text) === undefined &&
+        parseProjectInstructions(b.text) === undefined &&
+        !isConversationSummary(b.text) &&
+        !isEditorContext(b.text)
+          ? [b.text]
+          : []
+      )
+      .join('\n')
     messages = messages.slice(0, baseLength)
     // Geri alınan turun kullanımı toplamlardan da düşsün
     const remainingTurns = countTurns(messages)
@@ -771,7 +981,8 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
       calls = []
       legacyUsage = undefined
     } else void persistSession()
-    return { state: await state(), text, restored, skipped }
+    const images = removed.content.filter((b): b is ImageBlock => b.type === 'image')
+    return { state: await state(), text, images, restored, skipped }
   }
 
   // --- IPC ---
@@ -782,6 +993,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     void persistSession()
     return state()
   })
+  ipcMain.handle(IpcChannel.agentCompact, () => compact())
   ipcMain.handle(IpcChannel.agentState, () => state())
   ipcMain.handle(IpcChannel.agentProviders, (_event, refresh: unknown) => loadCatalog(refresh === true))
   ipcMain.handle(IpcChannel.agentSetSettings, async (_event, raw: Partial<AgentSettings>) => {
@@ -858,9 +1070,16 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     await loadCatalog().catch(() => {})
     return state()
   })
-  ipcMain.handle(IpcChannel.agentSend, (_event, text: unknown, problems: unknown) =>
-    run(String(text), Array.isArray(problems) ? (problems as ProblemReport[]) : [])
+  ipcMain.handle(IpcChannel.agentSend, (_event, text: unknown, problems: unknown, editor: unknown, images: unknown) =>
+    run(
+      String(text),
+      Array.isArray(problems) ? (problems as ProblemReport[]) : [],
+      parseEditorContextInput(editor),
+      parseImageInput(images)
+    )
   )
+  ipcMain.handle(IpcChannel.agentBtw, (_event, id: unknown, question: unknown) => btw(Number(id), String(question)))
+  ipcMain.handle(IpcChannel.agentBtwCancel, (_event, id: unknown) => btwControllers.get(Number(id))?.abort())
   ipcMain.handle(IpcChannel.agentListFiles, () => {
     const root = getProjectState().root
     return root ? listProjectFiles(root) : []
@@ -874,6 +1093,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     calls = []
     legacyUsage = undefined
     checkpoints = []
+    measurementStale = false
     permissionMode = stored.permissionMode
   })
   ipcMain.handle(IpcChannel.agentSessions, () => listSessions())
@@ -888,6 +1108,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     // Çağrı kaydı olan konuşmada toplam yeniden hesaplanır; eski kayıtta toplam tek başına durur
     legacyUsage = calls.length > 0 ? undefined : (found.usage ?? newUsage())
     checkpoints = []
+    measurementStale = false
     return state()
   })
   ipcMain.handle(IpcChannel.agentDeleteSession, async (_event, id: unknown) => {
@@ -901,6 +1122,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
       calls = []
       legacyUsage = undefined
       checkpoints = []
+      measurementStale = false
     }
     await sessionWrites
     await rm(sessionPath(target), { force: true })
@@ -984,9 +1206,14 @@ function finite(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-/** Kullanıcı mesajı sayısı (tool sonuçları da `user` rolünde gelir, onlar sayılmaz). */
+/** Kullanıcı mesajı sayısı (tool sonuçları ve sıkıştırma özeti `user` rolündedir, onlar sayılmaz). */
 function countTurns(history: Message[]): number {
-  return history.filter((m) => m.role === 'user' && m.content.some((b) => b.type === 'text')).length
+  return history.filter(isUserTextMessage).length
+}
+
+/** Kullanıcının gerçekten yazdığı metni taşıyan mesaj mı; yalnızca özet/bağlam blokları taşıyanlar değil. */
+function isUserTextMessage(message: Message): boolean {
+  return message.role === 'user' && message.content.some((block) => block.type === 'text' && !isConversationSummary(block.text))
 }
 
 function titleFrom(text: string): string {
@@ -1005,14 +1232,25 @@ function isLocalUrl(url: string | undefined): boolean {
 }
 
 /** Başarılı bir yazma tool'unun değiştirdiği dosyanın mutlak yolu. */
-function changedPath(tool: string, input: unknown, result: ToolResultBlock, root: string | null): string | null {
-  if (result.isError || !root || tool !== 'edit_file') return null
-  const path = (input as { path?: unknown }).path
-  return typeof path === 'string' ? resolve(root, path) : null
+async function readIfExists(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
 }
 
+/** `/btw` sorusunun başına eklenir: modele bunun ana işten ayrı, tool'suz bir yan soru olduğunu söyler. */
+const BTW_PREFIX = [
+  '<side_question>',
+  'This is a quick side question from the user, separate from the main task. It is answered once and is not kept in the conversation.',
+  'Answer it directly and concisely from what you already know and the conversation so far. Do not call any tools and do not continue the main task.',
+  '</side_question>'
+].join('\n')
+
 /** Sonucu gelmemiş tool çağrılarına "iptal edildi" sonucu ekler; aksi halde sonraki istek reddedilir. */
-function closeDanglingToolCalls(history: Message[]): Message[] {
+function closeDanglingToolCalls(history: Message[], content = 'Cancelled by the user.'): Message[] {
   const last = history.at(-1)
   if (!last || last.role !== 'assistant') return history
   const calls = toolCalls(last)
@@ -1021,7 +1259,7 @@ function closeDanglingToolCalls(history: Message[]): Message[] {
     ...history,
     {
       role: 'user',
-      content: calls.map((call) => ({ type: 'tool_result', callId: call.id, content: 'Cancelled by the user.', isError: true }))
+      content: calls.map((call) => ({ type: 'tool_result', callId: call.id, content, isError: true }))
     }
   ]
 }
@@ -1042,12 +1280,34 @@ function systemPrompt(
     '',
     '# How to work',
     '- File paths in tool calls are relative to the project folder.',
-    '- Read a file before editing it, and keep edits small and focused. Depending on the permission mode the user chose, an edit is shown as a diff and runs only if they approve it, or is applied directly.',
+    '- Find files by name with find_files and search their contents with search_files. For .sk files, get_outline shows where events, commands and functions are; find_definition and find_references follow functions, variables and options across scripts.',
+    '- Create new files with write_file. Change existing files with edit_file: read the file first, and keep edits small and focused. For several changes in one file use multi_edit; to rename a function, variable or option everywhere use rename_symbol. Move, rename or delete files with move_file and delete_file. Depending on the permission mode the user chose, a change is shown as a diff and runs only if they approve it, or is applied directly.',
     '- Skript is indentation-based: keep the file\'s existing indentation (tabs or spaces) exactly.',
     `- Only use syntax that exists in Skript ${skriptVersion} and the listed addons. If you are not sure a pattern exists, look it up with search_syntax and get_syntax_docs; if it is not there, say so instead of guessing.`,
-    '- After editing a .sk file, check it with get_diagnostics and fix the errors you introduced. When the user wants proof that a script really loads, use validate_on_server.',
+    '- When search_syntax prints a "Not available in this project (addon not installed)" section, that syntax needs an addon the project does not use: name the addon and suggest installing it instead of writing the syntax.',
+    '- Before writing Skript syntax you are not sure about, call explain_line (pass code plus an optional context such as "on join:", or path and line) to see which syntax entry and pattern it matches; when nothing matches it lists the closest patterns and the missing or misspelled word.',
+    '- Use inspect_position on an existing line to get its hover documentation, the enclosing event and its event values, local variables and options in scope, and a short completion list, instead of guessing whether an event value or expression exists there.',
+    '- For real-world idioms use search_examples. Snippets come from real scripts and may target another Skript version or addons the project does not use, so verify anything you copy.',
+    '- Edits to .sk files already report the new errors and warnings they introduce (with quick fixes when available). Fix those before moving on; use get_diagnostics only for a full check of a file or the whole project.',
+    '- When the user wants proof that a script really loads, use validate_on_server. When they want proof that it works at runtime, use test_script: it loads one .sk file on the local test server, runs console commands, checks expect/forbid output, and unloads the script afterwards. run_server_command runs console commands on the test server, and get_server_log shows its recent console output.',
+    '- The test server console is not a player: player-only events (on join, on break, ...) never fire and "!" effect commands are unavailable. Test such logic through a console-executable command in the script instead.',
+    '- Before changing the project\'s Skript version, call get_migration_notes with the current and target versions to find removed or changed syntax.',
     '- Use get_project_info when the Skript version, addons or validation server state matter.',
+    '- You may call several read-only tools in one response; they run in parallel. File changes and commands run one at a time, in the order you list them.',
+    '- For multi-step work (3 or more steps, or changes across several files) keep the plan with update_todos: put the whole list in one call, mark a step in_progress before starting it and completed as soon as it is done. Do not use it for simple one-step requests.',
     '- Reply in the language the user writes in.',
+    '',
+    '# Skript guide',
+    SKRIPT_GUIDE,
+    '',
+    '# Math and block displays',
+    GEOMETRY_INSTRUCTIONS,
+    '',
+    '# Editor',
+    EDITOR_CONTEXT_INSTRUCTIONS,
+    '',
+    '# Project instructions',
+    PROJECT_MEMORY_INSTRUCTIONS,
     '',
     '# Goal',
     GOAL_INSTRUCTIONS

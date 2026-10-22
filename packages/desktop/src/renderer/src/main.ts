@@ -14,7 +14,7 @@ import { pickAddons } from './addon-picker'
 import { api } from './api'
 import { ServerConsole } from './console'
 import { DocumentManager, type OpenDocument } from './documents'
-import { Explorer } from './explorer'
+import { Explorer, isInside } from './explorer'
 import { SkriptLspClient, type LspStatus, type MigrationItem } from './lsp/client'
 import { applySemanticTheme, SKRIPT_LSP_THEME_ID } from './lsp/theme'
 import { pathForUri, readWorkspace, uriForPath } from './lsp/workspace'
@@ -115,11 +115,35 @@ const languageServer = new SkriptLspClient({
   }
 })
 
-const explorer = new Explorer(
-  $('#explorer'),
-  (path) => void run(() => docs.open(path)),
-  () => void run(actions['open-folder'])
-)
+const explorer = new Explorer($('#explorer'), {
+  onOpenFile: (path, preserveFocus) => void run(() => docs.open(path, preserveFocus)),
+  onOpenFolderRequest: () => void run(actions['open-folder']),
+  onRenamed: (oldPath, newPath) => {
+    // Taşınan klasörün içindeki açık dosyalar da yeni yola geçer
+    for (const doc of docs.documents) {
+      if (doc.path === null || !isInside(doc.path, oldPath)) continue
+      const previousSource = docs.sourceId(doc)
+      docs.relocate(doc, newPath + doc.path.slice(oldPath.length))
+      problems.renameSource(previousSource, docs.sourceId(doc))
+    }
+  },
+  onDeleted: (path) => {
+    // Kaydedilmemiş değişikliği olan sekmeler kaydedilene kadar açık kalır
+    for (const doc of [...docs.documents]) {
+      if (doc.path !== null && isInside(doc.path, path) && !docs.isDirty(doc)) docs.close(doc.id)
+    }
+  },
+  onWorkspaceChanged: () => void run(refreshWorkspaceFiles),
+  onError: (error) => showStatus(error.message, 'error')
+})
+
+/** Gezginde yapılan değişikliklerden sonra dil sunucusunun dosya listesini sessizce tazeler. */
+async function refreshWorkspaceFiles(): Promise<void> {
+  const root = project?.root
+  if (!root) return
+  const snapshot = await readWorkspace(root)
+  languageServer.setWorkspaceFiles(snapshot.files, snapshot.complete)
+}
 
 // --- Durum çubuğu ---
 
@@ -317,6 +341,53 @@ async function validate(doc: OpenDocument | null = docs.active): Promise<void> {
 function validateAfterSave(doc: OpenDocument | null): void {
   if (doc?.model.getLanguageId() === SKRIPT_LANGUAGE_ID) void run(() => validate(doc))
 }
+
+// --- Yazarken canlı doğrulama ---
+
+/** Son tuştan sonra sunucuya gitmeden önce beklenecek süre. */
+const LIVE_VALIDATE_DELAY_MS = 300
+
+let liveTimer: number | null = null
+let liveRunning = false
+/** Doğrulama sürerken değişen belge; bitince en son içerikle bir kez daha doğrulanır. */
+let livePending: OpenDocument | null = null
+
+/** Her değişiklikte (tek harf dahi) aktif Skript belgesini sessizce sunucuda doğrular. */
+function scheduleLiveValidation(): void {
+  const doc = docs.active
+  if (doc?.model.getLanguageId() !== SKRIPT_LANGUAGE_ID) return
+  if (liveTimer !== null) window.clearTimeout(liveTimer)
+  liveTimer = window.setTimeout(() => {
+    liveTimer = null
+    void runLiveValidation(doc)
+  }, LIVE_VALIDATE_DELAY_MS)
+}
+
+async function runLiveValidation(doc: OpenDocument): Promise<void> {
+  if (liveRunning) {
+    livePending = doc
+    return
+  }
+  // Sunucu hazır değilse (EULA, hazırlanıyor, hata) yazarken pencere açma; kaydet/F5 bunu üstlenir
+  const state = serverStatus?.state
+  if (state !== 'ready' && state !== 'validating') return
+  if (!docs.documents.includes(doc)) return
+
+  liveRunning = true
+  try {
+    const result = await api.validate({ source: docs.sourceId(doc), fileName: docs.title(doc), content: doc.model.getValue() })
+    problems.setResult(result)
+  } catch {
+    // Canlı doğrulama hataları sessiz kalır; sunucu durumu zaten durum çubuğunda görünüyor
+  } finally {
+    liveRunning = false
+    const next = livePending
+    livePending = null
+    if (next) void runLiveValidation(next)
+  }
+}
+
+editor.onDidChangeModelContent(scheduleLiveValidation)
 
 // --- Kenar çubuğu görünümleri ---
 
@@ -623,22 +694,31 @@ function notifySavedFile(doc: OpenDocument | null): void {
 
 // --- AI Agent ---
 
-/** Agent bir dosyayı diskte değiştirdi: temiz sekmeyi yeniden yükle, kirli sekmeyi ellemeden uyar. */
+/**
+ * Agent bir dosyayı diskte değiştirdi, oluşturdu ya da (geri almada) sildi: gezgini tazele,
+ * temiz sekmeyi yeniden yükle, kirli sekmeyi ellemeden uyar.
+ */
 async function reloadChangedFile(path: string): Promise<void> {
+  void explorer.refresh()
   const doc = docs.documents.find((candidate) => candidate.path !== null && samePath(candidate.path, path))
-  const content = await api.readFile(path)
+  const content = await api.readFile(path).catch(() => null)
+  if (content === null) {
+    // Silindi: açık sekme kaydedilene kadar içeriğini korur
+    if (extname(path) === '.sk') languageServer.workspaceFileChanged(uriForPath(path), null)
+    return
+  }
   if (doc) {
-    if (docs.isDirty(doc)) {
+    // Kaydedilmemiş metin de değiştirilir: tek bir geri alma adımı olduğu için Ctrl+Z ile geri gelir
+    const dirty = docs.isDirty(doc) && doc.model.getValue() !== content
+    docs.replaceWithSaved(doc, content)
+    if (dirty) {
       showStatus(
         l(
-          `Agent "${docs.title(doc)}" dosyasını diskte değiştirdi; sekmede kaydedilmemiş değişiklikler olduğu için yeniden yüklenmedi`,
-          `The agent changed "${docs.title(doc)}" on disk; the tab was not reloaded because it has unsaved changes`
-        ),
-        'error'
+          `Agent "${docs.title(doc)}" dosyasını değiştirdi; sekmedeki kaydedilmemiş değişiklikler Ctrl+Z ile geri alınabilir`,
+          `The agent changed "${docs.title(doc)}"; press Ctrl+Z in the tab to bring back your unsaved changes`
+        )
       )
-      return
     }
-    docs.replaceWithSaved(doc, content)
   }
   if (extname(path) === '.sk') languageServer.workspaceFileChanged(uriForPath(path), content)
 }
@@ -672,6 +752,21 @@ const agentPanel = new AgentPanel(
     },
     languageForPath,
     problems: () => problems.report(),
+    editorContext: () => {
+      const doc = docs.active
+      const position = editor.getPosition()
+      if (!doc || !position) return null
+      const range = editor.getSelection()
+      const text = range && !range.isEmpty() ? doc.model.getValueInRange(range) : ''
+      return {
+        path: doc.path ?? docs.title(doc),
+        untitled: doc.path === null,
+        dirty: doc.path !== null && docs.isDirty(doc),
+        line: position.lineNumber,
+        column: position.column,
+        selection: text && range ? { startLine: range.startLineNumber, endLine: range.endLineNumber, text } : undefined
+      }
+    },
     onVisibilityChange: () => $('#status-agent').classList.toggle('active', agentPanel.visible)
   }
 )

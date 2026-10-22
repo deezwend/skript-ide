@@ -1,4 +1,4 @@
-import type { ContentBlock, Message, ReasoningBlock } from '../messages'
+import { imageDataUrl, type ContentBlock, type Message, type ReasoningBlock } from '../messages'
 import { ProviderError, type ModelProvider, type ModelRequest, type ModelResponse, type StreamDelta, type TokenUsage } from '../provider'
 
 export interface OpenAICompatibleProviderOptions {
@@ -16,12 +16,15 @@ export interface OpenAICompatibleProviderOptions {
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
+  /** Görsel içeren kullanıcı mesajında parça listesi. */
+  content: string | null | ChatContentPart[]
   reasoning_content?: string
   reasoning?: string
   tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[]
   tool_call_id?: string
 }
+
+type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 
 /** OpenAI biçimli `usage`; DeepSeek önbellek sayılarını kendi alanlarıyla da verir. */
 interface ChatUsage {
@@ -77,10 +80,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const body = {
       model,
       messages: toChatMessages(request.system, request.messages, providerId),
-      tools: request.tools.map((tool) => ({
-        type: 'function',
-        function: { name: tool.name, description: tool.description, parameters: tool.inputSchema }
-      })),
+      // Boş `tools` dizisini reddeden sağlayıcılar var (özetleme çağrısı tool'suz)
+      ...(request.tools.length
+        ? {
+            tools: request.tools.map((tool) => ({
+              type: 'function',
+              function: { name: tool.name, description: tool.description, parameters: tool.inputSchema }
+            }))
+          }
+        : {}),
       // OpenAI'nin yeni modelleri `max_tokens`'ı reddediyor; diğerleri çoğunlukla yalnızca onu tanıyor
       ...(providerId === 'openai' ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
       ...(effort ? { reasoning_effort: effort } : {}),
@@ -241,7 +249,11 @@ export function toChatMessages(system: string, messages: readonly Message[], pro
       }
     }
     const text = joinText(message.content)
-    if (text) result.push({ role: 'user', content: text })
+    const images = message.content.flatMap((block): ChatContentPart[] =>
+      block.type === 'image' ? [{ type: 'image_url', image_url: { url: imageDataUrl(block) } }] : []
+    )
+    if (images.length) result.push({ role: 'user', content: [...(text ? [{ type: 'text' as const, text }] : []), ...images] })
+    else if (text) result.push({ role: 'user', content: text })
   }
   return result
 }

@@ -6,7 +6,8 @@ import { fileUri, isScript, requireLanguageService, syncWorkspace } from './shar
 const MAX_DIAGNOSTICS = 200
 const SEVERITIES: Record<number, string> = { 1: 'error', 2: 'warning', 3: 'info', 4: 'hint' }
 
-function formatDiagnostic(path: string, diagnostic: ToolDiagnostic): string {
+/** `path:line:column: severity: message [code]`; düzenleme geri bildirimi de aynı biçimi kullanır. */
+export function formatDiagnostic(path: string, diagnostic: ToolDiagnostic): string {
   const { line, character } = diagnostic.range.start
   const severity = SEVERITIES[diagnostic.severity ?? 1] ?? 'error'
   const code = diagnostic.code === undefined ? '' : ` [${diagnostic.code}]`
@@ -19,7 +20,8 @@ export const getDiagnosticsTool = defineTool<{ path?: string }>({
   description:
     "Check Skript files with the IDE's static analyzer (the same errors and warnings shown in the Problems panel), " +
     "using the project's Skript version and addons. Returns \"path:line:column: severity: message [code]\" lines. " +
-    'Run it after editing a .sk file. It reads files from disk, so unsaved editor changes are not included. ' +
+    'Edits of .sk files already report the problems they introduce; use this for a full check of one file or the whole project. ' +
+    'It reads files from disk, so unsaved editor changes are not included. ' +
     'It does not run the script; use validate_on_server for that.',
   inputSchema: {
     type: 'object',

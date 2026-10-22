@@ -1,12 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { defineTool, ToolError, type ToolContext } from '../../tool'
+import { defineTool, ToolError, type JsonSchema, type ToolContext } from '../../tool'
+import { scriptFeedback } from '../skript/edit-feedback'
 import { resolveInProject } from './paths'
 
-interface EditInput {
+interface EditInput extends TextEdit {
   path: string
-  old_text: string
-  new_text: string
-  line?: number
 }
 
 const EOL = /\r\n|\r|\n/g
@@ -98,28 +96,73 @@ function chooseMatch(starts: readonly number[], lines: readonly number[], line: 
   return atLine[0]
 }
 
-/** Değişikliği hesaplar; hem önizleme hem uygulama aynı sonucu kullanır. */
-async function computeEdit({ path, old_text, new_text, line }: EditInput, ctx: ToolContext) {
-  if (old_text === '') throw new ToolError('old_text must not be empty.')
-  const file = await resolveInProject(ctx, path)
-  const before = await readFile(file, 'utf8')
+/** Tek bir değiştirme; `edit_file` girdisi ve `multi_edit` adımları bu biçimdedir. */
+export interface TextEdit {
+  old_text: string
+  new_text: string
+  line?: number
+  replace_all?: boolean
+}
 
-  const flatBefore = flatten(before)
+/**
+ * Değiştirmeyi metne uygular; eşleşme yoksa ya da belirsizse `ToolError` fırlatır.
+ * Dönen `count`: değiştirilen yer sayısı.
+ */
+export function applyTextEdit(text: string, { old_text, new_text, line, replace_all = false }: TextEdit, path: string): { text: string; count: number } {
+  // Boş dosyada eşleşecek metin yok; boş old_text dosyayı doldurur
+  if (old_text === '') {
+    if (text.trim() !== '') throw new ToolError('old_text must not be empty unless the file is empty.')
+    return { text: new_text, count: 1 }
+  }
+
+  const flatText = flatten(text)
   const flatOld = flatten(old_text)
-  const starts = occurrences(flatBefore, flatOld)
+  const starts = occurrences(flatText, flatOld)
   if (starts.length === 0) {
     throw new ToolError(
       `old_text was not found in ${path}. Read the file again and copy the text exactly, including indentation.`
     )
   }
 
-  const start = chooseMatch(starts, lineNumbers(flatBefore, starts), line, path)
-  const begin = originalOffset(before, start)
-  const end = originalOffset(before, start + flatOld.length)
-  const eol = detectEol(before)
-  const after = before.slice(0, begin) + new_text.replace(EOL, eol) + before.slice(end)
-  return { file, before, after }
+  let chosen: number[]
+  if (replace_all) {
+    if (line !== undefined) throw new ToolError('Pass either line or replace_all, not both.')
+    // Üst üste binen eşleşmelerden yalnızca ilki değişir
+    chosen = []
+    for (const start of starts) if (chosen.length === 0 || start >= chosen.at(-1)! + flatOld.length) chosen.push(start)
+  } else {
+    chosen = [chooseMatch(starts, lineNumbers(flatText, starts), line, path)]
+  }
+
+  const replacement = new_text.replace(EOL, detectEol(text))
+  let result = text
+  // Sondan başa: öndeki konumlar kaymasın
+  for (const start of [...chosen].reverse()) {
+    const begin = originalOffset(text, start)
+    const end = originalOffset(text, start + flatOld.length)
+    result = result.slice(0, begin) + replacement + result.slice(end)
+  }
+  return { text: result, count: chosen.length }
 }
+
+/** Değişikliği hesaplar; hem önizleme hem uygulama aynı sonucu kullanır. */
+async function computeEdit({ path, ...edit }: EditInput, ctx: ToolContext) {
+  const file = await resolveInProject(ctx, path)
+  const before = await readFile(file, 'utf8')
+  const { text: after, count } = applyTextEdit(before, edit, path)
+  return { file, before, after, count }
+}
+
+/** `edit_file` ve `multi_edit` adımlarının ortak şeması. */
+export const EDIT_PROPERTIES = {
+  old_text: { type: 'string' },
+  new_text: { type: 'string' },
+  line: {
+    type: 'integer',
+    description: '1-based line where old_text starts; picks one occurrence when old_text appears more than once.'
+  },
+  replace_all: { type: 'boolean', description: 'Replace every occurrence of old_text (default: false).' }
+} satisfies Record<string, JsonSchema>
 
 export const editFileTool = defineTool<EditInput>({
   name: 'edit_file',
@@ -127,17 +170,16 @@ export const editFileTool = defineTool<EditInput>({
     'Replace one exact occurrence of old_text with new_text in an existing project file. ' +
     'Copy old_text exactly from read_file output (without the line-number prefix), including indentation. ' +
     'Line endings (LF/CRLF) are matched automatically and new_text keeps the file\'s line ending style. ' +
-    'If old_text appears more than once, pass line (the 1-based line where it starts) to pick one.',
+    'If old_text appears more than once, pass line (the 1-based line where it starts) to pick one, ' +
+    'or replace_all to change every occurrence (for example to rename something within the file). ' +
+    'If the file is empty, pass an empty old_text to fill it with new_text. ' +
+    'For several changes in the same file, use multi_edit instead. ' +
+    'For .sk files the result also lists the errors and warnings this edit introduced, with quick fixes when available.',
   inputSchema: {
     type: 'object',
     properties: {
       path: { type: 'string', description: 'Path relative to the project root.' },
-      old_text: { type: 'string' },
-      new_text: { type: 'string' },
-      line: {
-        type: 'integer',
-        description: '1-based line where old_text starts; picks one occurrence when old_text appears more than once.'
-      }
+      ...EDIT_PROPERTIES
     },
     required: ['path', 'old_text', 'new_text'],
     additionalProperties: false
@@ -145,12 +187,14 @@ export const editFileTool = defineTool<EditInput>({
   permission: 'write',
   async preview(input, ctx) {
     const { before, after } = await computeEdit(input, ctx)
-    return { summary: `Edit ${input.path}`, change: { path: input.path, before, after } }
+    return { summary: `Edit ${input.path}`, changes: [{ path: input.path, before, after }] }
   },
   async execute(input, ctx) {
     // Onay beklenirken dosya değişmiş olabilir; yeniden hesapla
-    const { file, after } = await computeEdit(input, ctx)
+    const { file, before, after, count } = await computeEdit(input, ctx)
     await writeFile(file, after, 'utf8')
-    return `Edited ${input.path}.`
+    ctx.onFilesChanged?.([{ path: input.path, before, after }])
+    const summary = count > 1 ? `Edited ${input.path} (${count} replacements).` : `Edited ${input.path}.`
+    return `${summary}${await scriptFeedback(ctx, [{ path: input.path, file, before, after }])}`
   }
 })

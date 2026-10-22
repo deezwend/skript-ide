@@ -1,0 +1,23 @@
+/** Sistem istemine eklenen, sürümden bağımsız Skript tuzakları; sabit metin (önbelleğe uygun). */
+export const SKRIPT_GUIDE = `Skript pitfalls:
+- \`{_x}\` is local to one trigger and not saved; \`{x}\` is a global and persists across restarts. Prefer locals; use globals only for data that must survive.
+- Global names cannot start with \`_\`. Key player data by UUID: \`{coins::%player's uuid%}\`, never by name.
+- \`{list::*}\` is a list: \`loop {list::*}\` gives \`loop-value\` and \`loop-index\`; \`delete {list::*}\` or \`clear {list::*}\` empties it.
+- \`set {_x} to v\` overwrites; \`add n to {_x}\` needs a number. \`{_t} parsed as number\` returns nothing on failure, so check \`is set\`.
+- Test with \`if {_x} is set:\` before comparing: an unset variable is nothing, and arithmetic on nothing is not 0.
+- Functions: \`function f(a: text) :: text:\` plus \`return {_a}\`; \`return\` needs a declared return type.
+- Keep \`wait\` out of functions that return a value: the caller needs the result immediately; delayed returns are a common bug.
+- \`wait\` pauses the trigger; the event is already handled when it resumes, so \`cancel event\` is too late and the world may have changed.
+- \`cancel event\` only works in cancellable events (damage, chat, block break...); check \`cancellable\` in get_syntax_docs.
+- \`on load:\` and \`every %time span%:\` have no player or event values.
+- \`every tick\` and short \`every ...\` loops run constantly: keep bodies cheap and do no file or database work there.
+- Delays are not persistent: code after \`wait 1 hour\` will not resume after a server restart.
+- \`options:\` defines \`{@name}\` replacements once; use them for repeated messages and settings.
+- Commands use \`permission:\`, \`usage:\`, \`executable by: players and console\`, \`cooldown: 10 seconds\`; \`permission message:\` is deprecated in recent versions.
+- Strings interpolate with \`%expression%\`; write \`%%\` for a literal percent. Colors: \`<red>\`, \`<bold>\` or legacy \`&c\`.
+- \`send "x" to player\` targets one audience, \`broadcast "x"\` goes to the whole server, \`message "x"\` is short for \`send\`.
+- \`stop\`/\`exit trigger\` ends the trigger; \`stop loop\`/\`exit 1 section\` leaves a loop or conditional early.
+- Keep the file's indentation (tabs or 4 spaces, never mixed); a wrong indent silently changes blocks.
+- Addon syntax exists only when the addon is installed and selected; search_syntax marks syntax from addons the project lacks.
+- Addons like skript-reflect can run code async; never touch worlds, blocks or entities from async code.
+- For removed or changed syntax, ask get_migration_notes for the target version instead of guessing.`

@@ -151,6 +151,8 @@ function perTokenRates(call: CallUsage, price: PriceRates | undefined): { paid: 
 }
 
 const CHARS_PER_TOKEN = 3.5
+/** Görsel başına kaba tahmin; sağlayıcılar ~1568 px'e küçültülmüş bir görseli bu civarda sayar. */
+const IMAGE_TOKENS = 1600
 
 /** Kaba token tahmini; yalnızca bağlam yüzdesi için, faturaya girmez. */
 export function estimateTextTokens(text: string): number {
@@ -173,6 +175,9 @@ export function estimateMessageTokens(message: Message): number {
         break
       case 'provider_data':
         chars += jsonLength(block.data)
+        break
+      case 'image':
+        chars += IMAGE_TOKENS * CHARS_PER_TOKEN
         break
     }
   }

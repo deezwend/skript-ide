@@ -39,8 +39,12 @@ export { SkriptLogParser, stripAnsi, type DiagnosticSeverity, type SkriptDiagnos
 export {
   EulaRequiredError,
   SkriptServer,
+  prepareServerCommand,
   stagingName,
+  STAGING_FOLDER,
   type AddonLoadStatus,
+  type CommandResult,
+  type RunCommandsOptions,
   type ServerState,
   type ServerStatus,
   type SkriptServerOptions,

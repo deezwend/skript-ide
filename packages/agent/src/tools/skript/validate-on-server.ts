@@ -1,23 +1,9 @@
 import { readFile, realpath } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { defineTool, ToolError, type ToolContext } from '../../tool'
+import { defineTool, ToolError } from '../../tool'
 import { displayPath, resolveInProject } from '../core/paths'
+import { requireServer, untilAborted } from './server-shared'
 import { isScript } from './shared'
-
-/** İptal edilince bekleme bırakılır; sunucudaki doğrulama kendi zaman aşımıyla biter. */
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(new ToolError('Cancelled.'))
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(new ToolError('Cancelled.'))
-    signal.addEventListener('abort', onAbort, { once: true })
-    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
-  })
-}
-
-function requireServer(ctx: ToolContext): NonNullable<ToolContext['server']> {
-  if (!ctx.server) throw new ToolError('The validation server is not available.')
-  return ctx.server
-}
 
 export const validateOnServerTool = defineTool<{ path: string }>({
   name: 'validate_on_server',

@@ -85,11 +85,80 @@ class LaunchCancelledError extends Error {
 }
 
 /** Doğrulanan betikler, sunucunun kendi betiklerinden ayrı bu alt klasöre konur. */
-const STAGING_FOLDER = 'ide'
+export const STAGING_FOLDER = 'ide'
 const READY_TIMEOUT_MS = 5 * 60_000
 const VALIDATE_TIMEOUT_MS = 60_000
 const STOP_TIMEOUT_MS = 20_000
 const LOG_BUFFER_CHARS = 256 * 1024
+
+const COMMAND_TIMEOUT_MS = 15_000
+const COMMAND_MAX_TIMEOUT_MS = 60_000
+const COMMAND_SETTLE_MS = 1_500
+const MAX_COMMANDS = 20
+const MAX_COMMAND_LENGTH = 2_000
+const MAX_LOG_LINES = 2_000
+const ACK_PREFIX = 'SKRIPT_IDE_ACK:'
+
+/**
+ * Sunucuda her komut penceresinin sonunda çalışan yardımcı: konsolun komutları gerçekten işlediğini
+ * ACK satırıyla bildirir. `sender` konsol olduğu için satır doğrudan konsol çıktısına düşer.
+ */
+const HARNESS_SCRIPT_NAME = 'skriptide-harness.sk'
+const HARNESS_SCRIPT = [
+  '# Skript IDE: console ACK for command windows. Bu dosya otomatik yazılır, düzenlemeyin.',
+  'command /skriptide-ack <text>:',
+  '    executable by: console',
+  '    trigger:',
+  '        send "SKRIPT_IDE_ACK:%arg-1%" to sender',
+  ''
+].join('\n')
+
+/**
+ * Bu komutlar test sunucusunu durdurabilir ya da erişimi değiştirebilir; console'dan çalıştırılmaz.
+ * `sk reload` gibi Skript alt komutları etkilenmez (satır `sk` ile başlıyor).
+ */
+const FORBIDDEN_COMMAND =
+  /^(?:(?:minecraft|bukkit|paper|spigot|essentials):)?(stop|restart|reload|op|deop|whitelist|ban(?:-ip)?|pardon(?:-ip)?)\b/i
+
+export interface RunCommandsOptions {
+  /** Son satırdan sonra beklenecek sessizlik; varsayılan 1500 ms. */
+  settleMs?: number
+  /** Toplam üst sınır; varsayılan 15 sn, en fazla 60 sn. */
+  timeoutMs?: number
+  /** Bu metin bir konsol satırında geçerse (ya da regex eşleşirse) bekleme hemen biter. */
+  until?: string | RegExp
+  signal?: AbortSignal
+}
+
+export interface CommandResult {
+  /** Bu pencerede gelen konsol satırları; zaman damgası ve seviye öneki temizlenmiş. */
+  output: string[]
+  /** Süre dolduğu için pencere kapandı. */
+  timedOut: boolean
+  durationMs: number
+  /** Sunucu ACK satırını döndürdüyse komutların işlendiği kesindir. */
+  acknowledged: boolean
+  /** `until` verildiyse ve eşleştiyse true. */
+  matchedUntil: boolean
+}
+
+/**
+ * Komut satırını sunucuya göndermeden önce doğrular; baştaki `/` kaldırılmış halini döndürür.
+ * Çok satırlı, boş ve sunucuyu durdurabilecek komutlar reddedilir.
+ */
+export function prepareServerCommand(command: string): string {
+  if (typeof command !== 'string') throw new Error(l('Komut bir metin olmalı.', 'The command must be text.'))
+  if (/[\r\n]/.test(command.trim())) throw new Error(l('Çok satırlı komut gönderilemez.', 'Multi-line commands cannot be sent.'))
+  const line = command.trim().replace(/^\/+/, '').trim()
+  if (!line) throw new Error(l('Boş komut gönderilemez.', 'An empty command cannot be sent.'))
+  if (line.length > MAX_COMMAND_LENGTH) {
+    throw new Error(l(`Komut en fazla ${MAX_COMMAND_LENGTH} karakter olabilir.`, `A command can be at most ${MAX_COMMAND_LENGTH} characters.`))
+  }
+  if (FORBIDDEN_COMMAND.test(line)) {
+    throw new Error(l(`Bu komut test sunucusunda çalıştırılamaz: ${line}`, `This command cannot be run on the test server: ${line}`))
+  }
+  return line
+}
 
 interface ActiveValidation {
   stagedName: string
@@ -115,6 +184,11 @@ export class SkriptServer {
   private lineBuffer = ''
   private log = ''
   private status: ServerStatus
+  /** Komut penceresi boyunca konsol satırlarını dinleyen kancalar. */
+  private readonly lineListeners = new Set<(line: string) => void>()
+  /** Sunucu kapanırsa açık komut penceresini beklemeden bitirir. */
+  private commandFinish: (() => void) | null = null
+  private commandSequence = 0
 
   constructor(private readonly options: SkriptServerOptions) {
     this._versions = options.versions ?? DEFAULT_VERSIONS
@@ -221,6 +295,40 @@ export class SkriptServer {
     if (!line) return
     this.emitLog(`> ${line}\n`)
     this.process.stdin.write(`${line}\n`)
+  }
+
+  /**
+   * Komutları konsoldan sırayla çalıştırır ve bu pencerede sunucunun yazdığı satırları toplar.
+   * Doğrulamalarla aynı kuyruğa girer; sunucu kapalıysa `validate()` gibi önce başlatılır.
+   * `until` eşleşmezse son satırdan sonra `settleMs` sessizlik beklenir, en geç `timeoutMs`te biter.
+   */
+  runCommands(commands: readonly string[], options: RunCommandsOptions = {}): Promise<CommandResult> {
+    let prepared: string[]
+    try {
+      prepared = commands.map((command) => prepareServerCommand(command))
+    } catch (error) {
+      return Promise.reject(error)
+    }
+    if (prepared.length === 0) {
+      return Promise.reject(new Error(l('En az bir komut gerekiyor.', 'At least one command is required.')))
+    }
+    if (prepared.length > MAX_COMMANDS) {
+      return Promise.reject(new Error(l(`Tek seferde en fazla ${MAX_COMMANDS} komut çalıştırılabilir.`, `At most ${MAX_COMMANDS} commands can be run at once.`)))
+    }
+    const run = this.queue.then(() => this.runCommandWindow(prepared, options))
+    this.queue = run.catch(() => {})
+    return run
+  }
+
+  /** Son `lines` konsol satırı; ANSI kodları temizlenir, boş ve ACK işaretçisi satırları atlanır. */
+  readLog(lines = 100): string[] {
+    const requested = Number.isFinite(lines) ? Math.floor(lines) : 100
+    const count = Math.max(1, Math.min(MAX_LOG_LINES, requested))
+    return this.log
+      .split('\n')
+      .map((line) => stripAnsi(line).replace(/\r/g, ''))
+      .filter((line) => line.trim() !== '' && !line.includes(ACK_PREFIX) && !/^>\s*skriptide-ack\b/.test(line.trim()))
+      .slice(-count)
   }
 
   /** Önce `stop` komutuyla düzgünce kapatmayı dener, olmazsa süreci öldürür. */
@@ -424,6 +532,8 @@ export class SkriptServer {
     // Her oturum temiz başlasın: önceki oturumda doğrulanan betikler yüklenmesin
     await rm(staging, { recursive: true, force: true })
     await mkdir(staging, { recursive: true })
+    // Komut penceresinin ACK işaretçisi bu yardımcıyla konsola düşer
+    await writeFile(join(plugins, 'Skript', 'scripts', HARNESS_SCRIPT_NAME), HARNESS_SCRIPT, 'utf8')
 
     // `plugins/` bu uygulamaya ait: istenen Skript ve addon jar'ları dışında kalan her jar (farklı sürüm,
     // kaldırılan addon) silinir. Addon'ların veri klasörlerine dokunulmaz.
@@ -478,6 +588,10 @@ export class SkriptServer {
 
   private onLine(raw: string): void {
     const line = stripAnsi(raw)
+    if (this.lineListeners.size > 0) {
+      const text = consoleLine(line)
+      for (const listener of this.lineListeners) listener(text)
+    }
     if (this.onReady && this.addonStatus.length > 0) this.trackAddonLine(line)
     if (this.onReady && /\bDone \([\d.,]+s\)!/.test(line)) {
       this.onReady()
@@ -510,6 +624,7 @@ export class SkriptServer {
     this.startPromise = null
     this.onReady = null
     this.active?.finish(false)
+    this.commandFinish?.()
     this.emitLog(l(`[Skript IDE] Sunucu kapandı (çıkış kodu ${code}).\n`, `[Skript IDE] Server stopped (exit code ${code}).\n`))
     if (expected) this.setStatus('stopped', l('Sunucu kapalı', 'Server stopped'))
     else if (this.status.state !== 'error') this.setStatus('error', l(`Sunucu beklenmedik şekilde kapandı (çıkış kodu ${code})`, `The server stopped unexpectedly (exit code ${code})`))
@@ -555,6 +670,98 @@ export class SkriptServer {
     }
   }
 
+  // --- Komut çalıştırma ---
+
+  private async runCommandWindow(commands: readonly string[], options: RunCommandsOptions): Promise<CommandResult> {
+    const empty = (): CommandResult => ({ output: [], timedOut: false, durationMs: 0, acknowledged: false, matchedUntil: false })
+    if (options.signal?.aborted) return empty()
+    await this.start()
+    if (options.signal?.aborted) return empty()
+
+    const startedAt = Date.now()
+    const timeoutMs = clampNumber(options.timeoutMs ?? COMMAND_TIMEOUT_MS, 250, COMMAND_MAX_TIMEOUT_MS)
+    const settleMs = clampNumber(options.settleMs ?? COMMAND_SETTLE_MS, 0, COMMAND_MAX_TIMEOUT_MS)
+    /** Yardımcı komut yoksa da pencere bu işaretçiyle kendiliğinden kapanır. */
+    const token = `${Date.now().toString(36)}-${++this.commandSequence}`
+    const marker = `${ACK_PREFIX}${token}`
+    const until = options.until
+    const output: string[] = []
+
+    return new Promise<CommandResult>((resolve, reject) => {
+      let done = false
+      /** Pencere içinde en az bir satır geldiyse sessizlik sayacı çalışabilir. */
+      let sawLine = false
+      let acknowledged = false
+      let matchedUntil = false
+      let timedOut = false
+      let settleTimer: ReturnType<typeof setTimeout> | undefined
+      let deadline: ReturnType<typeof setTimeout> | undefined
+
+      const cleanup = () => {
+        this.lineListeners.delete(listener)
+        if (this.commandFinish === finish) this.commandFinish = null
+        if (settleTimer) clearTimeout(settleTimer)
+        if (deadline) clearTimeout(deadline)
+        options.signal?.removeEventListener('abort', onAbort)
+      }
+      const finish = () => {
+        if (done) return
+        done = true
+        cleanup()
+        resolve({ output, timedOut, durationMs: Date.now() - startedAt, acknowledged, matchedUntil })
+      }
+      const fail = (error: unknown) => {
+        if (done) return
+        done = true
+        cleanup()
+        reject(error)
+      }
+      const onAbort = () => finish()
+      const armSettle = () => {
+        if (!sawLine && !acknowledged) return
+        if (settleTimer) clearTimeout(settleTimer)
+        settleTimer = setTimeout(finish, settleMs)
+      }
+      const listener = (line: string) => {
+        if (done) return
+        if (line.includes(marker)) {
+          acknowledged = true
+          armSettle()
+          return
+        }
+        sawLine = true
+        output.push(line)
+        const hit = typeof until === 'string' ? line.includes(until) : until ? matchesRegExp(until, line) : false
+        if (hit) {
+          matchedUntil = true
+          finish()
+          return
+        }
+        armSettle()
+      }
+
+      this.lineListeners.add(listener)
+      this.commandFinish = finish
+      options.signal?.addEventListener('abort', onAbort, { once: true })
+      try {
+        for (const command of commands) {
+          if (options.signal?.aborted) break
+          this.sendCommand(command)
+        }
+        if (!options.signal?.aborted) this.sendCommand(`skriptide-ack ${token}`)
+      } catch (error) {
+        fail(error)
+        return
+      }
+      if (done) return
+      deadline = setTimeout(() => {
+        timedOut = true
+        finish()
+      }, timeoutMs)
+      if (options.signal?.aborted) finish()
+    })
+  }
+
   // --- Yardımcılar ---
 
   private lastProgress = ''
@@ -595,6 +802,25 @@ function serverDirFor(rootDir: string, versions: RuntimeVersions): string {
 /** Sunucu satırından zaman/seviye öneklerini atar: `[13:20:38 ERROR]: x` → `x`. */
 function cleanLogLine(line: string): string {
   return line.replace(/^(\[[^\]]*\]:?\s*)+/, '').trim().slice(0, 300)
+}
+
+/** Sunucu satırından zaman/seviye önekini atar; `[Server]` gibi etiketler ve girinti kalır. */
+function consoleLine(line: string): string {
+  return line
+    .replace(/^\[\d{2}:\d{2}:\d{2}(?: [A-Z]+)?\]:?\s*/, '')
+    .replace(/^\[[^\]]*\/[A-Z]+\]:?\s*/, '')
+    .replace(/\r$/, '')
+    .trimEnd()
+}
+
+function matchesRegExp(pattern: RegExp, line: string): boolean {
+  pattern.lastIndex = 0
+  return pattern.test(line)
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, value))
 }
 
 function addProblem(status: AddonLoadStatus, problem: string): void {

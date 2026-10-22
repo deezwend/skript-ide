@@ -4,12 +4,15 @@ import type {
   AgentStopReason,
   ApprovalRequest,
   CatalogProvider,
+  EditorContext,
+  ImageBlock,
   Message,
   PermissionMode,
   ProblemReport,
   StreamDelta,
   ToolCallBlock,
-  ToolResultBlock
+  ToolResultBlock,
+  Todo
 } from '@skript-ide/agent'
 import type { Locale } from '@skript-ide/i18n'
 import type {
@@ -25,10 +28,14 @@ export type {
   CatalogModel,
   CatalogProvider,
   ContentBlock,
+  EditorContext,
+  ImageBlock,
   Message,
   PermissionMode,
   ProblemReport,
-  ToolCallBlock
+  ToolCallBlock,
+  ToolResultBlock,
+  Todo
 } from '@skript-ide/agent'
 export type {
   AddonIssue,
@@ -71,6 +78,10 @@ export interface SkriptVersionOption extends SkriptRuntimeProfile {
   /** Gereken Java bu makinede bulundu mu (`null`: henüz bakılmadı). */
   javaAvailable: boolean | null
 }
+
+export type ContextMenuItem =
+  | { type: 'separator' }
+  | { id: string; label: string; enabled?: boolean; accelerator?: string }
 
 export interface DirEntry {
   name: string
@@ -179,6 +190,8 @@ export interface AgentState {
   encryptionAvailable: boolean
   /** `/goal` ile verilen kalıcı hedef; değiştiği ilk kullanıcı mesajına blok olarak eklenir (sistem istemi önbellek için sabit kalır). */
   goal: string | null
+  /** Agent'ın `update_todos` ile bıraktığı plan listesi; geçmişteki son çağrıdan kurulur. */
+  todos: Todo[]
   usage: AgentUsage
   /** Şu an geçerli izin modu; yeni konuşmada `settings.permissionMode`'a döner. */
   permissionMode: PermissionMode
@@ -189,10 +202,19 @@ export interface AgentUndoResult {
   state: AgentState
   /** Silinen kullanıcı mesajının metni (panel girişe geri koyabilir); geri alınacak mesaj yoksa `null`. */
   text: string | null
+  /** Silinen mesajın görselleri; panel girişe geri koyar. */
+  images: ImageBlock[]
   /** Eski haline döndürülen dosyalar (proje köküne göre). */
   restored: string[]
   /** Sen ya da başka bir şey değiştirdiği için dokunulmayan dosyalar. */
   skipped: string[]
+}
+
+/** `/compact` sonucu: eski geçmiş özetlendi, geçmişin uzunluğu küçüldü. */
+export interface AgentCompactResult {
+  state: AgentState
+  /** Özete dönüşen mesaj sayısı; sıkıştırılacak geçmiş yoksa 0. */
+  summarizedMessages: number
 }
 
 /** Ana süreçten arayüze tek kanaldan (`agent:event`) akan olaylar. */
@@ -206,6 +228,12 @@ export type AgentUiEvent =
   | { type: 'approval-request'; id: number; request: ApprovalRequest }
   /** Agent diskteki bir dosyayı değiştirdi; açık sekme varsa yeniden yüklenmeli. */
   | { type: 'file-changed'; path: string }
+  /** Bağlam dolmaya yaklaştığı için bu kadar eski tool sonucu kısaltıldı. */
+  | { type: 'context-trimmed'; trimmed: number }
+  /** Bağlam sığmadığı için konuşmanın eski kısmı özetlendi; önceki turlar artık geri alınamaz. */
+  | { type: 'context-compacted'; summarizedMessages: number }
+  /** Agent plan listesini (`update_todos`) değiştirdi. */
+  | { type: 'todos'; todos: Todo[] }
   /** Konuşmanın toplam kullanımı; her model çağrısından sonra gelir. */
   | { type: 'usage'; usage: AgentUsage }
   /**
@@ -214,6 +242,8 @@ export type AgentUiEvent =
    */
   | { type: 'cache-miss'; missedTokens: number; missedCost: number; idleMs: number; reason: 'model' | 'idle' | 'other' }
   | { type: 'done'; reason: AgentStopReason | 'cancelled' | 'error'; error?: string }
+  /** `/btw` yanıtının akan metni; `id` panelin verdiği soru kimliğidir. */
+  | { type: 'btw-delta'; id: number; text: string }
 
 export interface SkriptIdeApi {
   openFolderDialog(): Promise<string | null>
@@ -222,6 +252,17 @@ export interface SkriptIdeApi {
   readDir(dir: string): Promise<DirEntry[]>
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
+  /** Gezgin işlemleri; hepsi açık klasörün içinde kalır ve yeni yolu döner. */
+  createFile(dir: string, name: string): Promise<string>
+  createDirectory(dir: string, name: string): Promise<string>
+  renamePath(path: string, newName: string): Promise<string>
+  /** Geri dönüşüm kutusuna taşır. */
+  trashPath(path: string): Promise<void>
+  /** `targetDir` içine kopyalar (`move` ise taşır); ad çakışırsa "- kopya" eklenir. */
+  transferPath(source: string, targetDir: string, move: boolean): Promise<string>
+  revealPath(path: string): Promise<void>
+  /** Yerel bağlam menüsü; seçilen öğenin `id`'si ya da vazgeçildiyse `null`. */
+  showContextMenu(items: ContextMenuItem[]): Promise<string | null>
   setDirty(dirty: boolean): void
   onMenuAction(listener: (action: MenuAction) => void): () => void
 
@@ -284,9 +325,16 @@ export interface SkriptIdeApi {
    * Mesajı gönderir; agent turu bitince çözülür. Olaylar `onAgentEvent` ile akar.
    * `problems`: mesajda `@Problems` etiketi varsa PROBLEMLER sekmesinin o anki içeriği.
    */
-  agentSend(text: string, problems?: ProblemReport[]): Promise<void>
+  /** `editor`: kullanıcının o an editörde baktığı yer; mesaja bağlam olarak eklenir. `images`: eklenen görseller. */
+  agentSend(text: string, problems?: ProblemReport[], editor?: EditorContext | null, images?: ImageBlock[]): Promise<void>
   /** `@` etiket listesi için projedeki dosyalar (köke göre); proje yoksa boş. */
   agentListFiles(): Promise<string[]>
+  /**
+   * `/btw`: konuşmanın bağlamıyla tool'suz bir yan soru sorar; soru ve yanıt geçmişe girmez,
+   * tur sürerken de çalışır. Akan metin `btw-delta` olaylarıyla gelir, tam yanıtla çözülür.
+   */
+  agentBtw(id: number, question: string): Promise<string>
+  agentBtwCancel(id: number): Promise<void>
   agentCancel(): Promise<void>
   /** Yeni konuşma başlatır (çalışıyorsa önce durdurur). */
   agentReset(): Promise<void>
@@ -299,6 +347,8 @@ export interface SkriptIdeApi {
   agentUndo(): Promise<AgentUndoResult>
   /** Kalıcı hedefi ayarlar; `null` temizler. */
   agentSetGoal(goal: string | null): Promise<AgentState>
+  /** Geçmişin eski kısmını özetleyerek bağlamı hemen küçültür. */
+  agentCompact(): Promise<AgentCompactResult>
   /** Geçerli izin modunu değiştirir (çalışan tur dahil); varsayılan `agentSetSettings` ile değişir. */
   agentSetPermissionMode(mode: PermissionMode): Promise<AgentState>
   agentRespondApproval(id: number, approved: boolean): void
@@ -312,6 +362,13 @@ export const IpcChannel = {
   readDir: 'fs:read-dir',
   readFile: 'fs:read-file',
   writeFile: 'fs:write-file',
+  createFile: 'fs:create-file',
+  createDirectory: 'fs:create-directory',
+  renamePath: 'fs:rename',
+  trashPath: 'fs:trash',
+  transferPath: 'fs:transfer',
+  revealPath: 'fs:reveal',
+  contextMenu: 'menu:context',
   setDirty: 'app:set-dirty',
   locale: 'app:locale',
   menuAction: 'menu:action',
@@ -340,6 +397,8 @@ export const IpcChannel = {
   agentCodexLogout: 'agent:codex-logout',
   agentSend: 'agent:send',
   agentListFiles: 'agent:list-files',
+  agentBtw: 'agent:btw',
+  agentBtwCancel: 'agent:btw-cancel',
   agentCancel: 'agent:cancel',
   agentReset: 'agent:reset',
   agentSessions: 'agent:sessions',
@@ -347,6 +406,7 @@ export const IpcChannel = {
   agentDeleteSession: 'agent:delete-session',
   agentUndo: 'agent:undo',
   agentSetGoal: 'agent:set-goal',
+  agentCompact: 'agent:compact',
   agentSetPermissionMode: 'agent:set-permission-mode',
   agentApproval: 'agent:approval',
   agentEvent: 'agent:event'

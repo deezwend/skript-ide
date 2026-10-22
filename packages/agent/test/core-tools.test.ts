@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { editFileTool, listDirTool, readFileTool, searchFilesTool, ToolError } from '../src/index'
+import { editFileTool, listDirTool, readFileTool, searchFilesTool, ToolError, writeFileTool } from '../src/index'
 import { makeContext, makeProject } from './helpers'
 
 const FILES = {
@@ -75,11 +75,20 @@ test('edit_file benzersiz metni değiştirir, önizleme diff verir', () =>
     const input = { path: 'main.sk', old_text: '"hoş geldin"', new_text: '"merhaba"' }
 
     const preview = await editFileTool.preview!(input, ctx)
-    assert.equal(preview.change?.path, 'main.sk')
-    assert.match(preview.change!.after, /merhaba/)
+    assert.equal(preview.changes?.[0].path, 'main.sk')
+    assert.match(preview.changes![0].after, /merhaba/)
 
     await editFileTool.execute(input, ctx)
     assert.equal(await readFile(join(root, 'main.sk'), 'utf8'), 'on join:\n\tsend "merhaba" to player\n')
+  }))
+
+test('edit_file boş dosyayı boş old_text ile doldurur, dolu dosyada boş old_text reddedilir', () =>
+  withProject(async (root) => {
+    const ctx = makeContext({ projectRoot: root })
+    await writeFile(join(root, 'empty.sk'), '', 'utf8')
+    await editFileTool.execute({ path: 'empty.sk', old_text: '', new_text: 'on load:\n\tbroadcast "x"\n' }, ctx)
+    assert.equal(await readFile(join(root, 'empty.sk'), 'utf8'), 'on load:\n\tbroadcast "x"\n')
+    await assert.rejects(editFileTool.execute({ path: 'main.sk', old_text: '', new_text: 'x' }, ctx), /must not be empty/)
   }))
 
 test('edit_file bulunamayan ya da birden çok geçen metni reddeder', () =>
@@ -130,4 +139,30 @@ test('edit_file aynı satır birden çok geçtiğinde line ile seçer', () =>
       await readFile(join(root, 'lib/util.sk'), 'utf8'),
       'function hi():\n\tbroadcast "hi"\n\tbroadcast "selam"\n'
     )
+  }))
+
+test('write_file eksik klasörlerle yeni dosya oluşturur, önizleme boş "önce" verir', () =>
+  withProject(async (root) => {
+    const ctx = makeContext({ projectRoot: root })
+    const input = { path: 'scripts/new/hello.sk', content: 'on join:\n\tsend "hi"\n' }
+    const preview = await writeFileTool.preview!(input, ctx)
+    assert.equal(preview.summary, 'Create scripts/new/hello.sk')
+    assert.deepEqual(preview.changes, [{ path: input.path, before: '', after: input.content, created: true }])
+    assert.equal(await writeFileTool.execute(input, ctx), 'Created scripts/new/hello.sk (3 lines).')
+    assert.equal(await readFile(join(root, 'scripts/new/hello.sk'), 'utf8'), input.content)
+  }))
+
+test('write_file var olan dosyanın üzerine yazar, klasörü ve proje dışını reddeder', () =>
+  withProject(async (root) => {
+    const ctx = makeContext({ projectRoot: root })
+    const preview = await writeFileTool.preview!({ path: 'main.sk', content: 'x\n' }, ctx)
+    assert.equal(preview.summary, 'Overwrite main.sk')
+    assert.equal(preview.changes?.[0].before, FILES['main.sk'])
+    assert.equal(preview.changes?.[0].created, false)
+    await writeFileTool.execute({ path: 'main.sk', content: 'x\n' }, ctx)
+    assert.equal(await readFile(join(root, 'main.sk'), 'utf8'), 'x\n')
+
+    await assert.rejects(writeFileTool.execute({ path: 'lib', content: '' }, ctx), /is a directory/)
+    await assert.rejects(writeFileTool.execute({ path: '../escape.sk', content: '' }, ctx), /outside the project/)
+    await assert.rejects(writeFileTool.execute({ path: '.', content: '' }, ctx), /outside the project/)
   }))

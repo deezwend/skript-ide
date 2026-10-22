@@ -29,7 +29,7 @@ interface SourceProblems {
 }
 
 /**
- * PROBLEMLER sekmesi. İki kaynağı birlikte gösterir:
+ * PROBLEMLER sekmesi. Yalnızca sekmelerde açık dosyalar için iki kaynağı birlikte gösterir:
  * - "statik": dil sunucusunun canlı tanıları (Monaco marker sahibi `lsp`)
  * - "sunucu": Paper/Skript doğrulama sonuçları (marker sahibi `skript-server`)
  */
@@ -140,6 +140,8 @@ export class ProblemsPanel {
   private serverEntries(): ProblemEntry[] {
     const entries: ProblemEntry[] = []
     for (const { source, diagnostics } of this.results.values()) {
+      // Yalnızca sekmelerde açık olan dosyaların sorunları gösterilir
+      if (!this.docs.findBySource(source)) continue
       for (const diagnostic of diagnostics) {
         entries.push({
           origin: 'server',
@@ -177,12 +179,12 @@ export class ProblemsPanel {
       )
       empty.textContent = this.validatedOnce || hasSkriptDocument
         ? l(
-            'Sorun bulunamadı. Statik analiz yazarken, sunucu doğrulaması kaydedince ya da F5 ile çalışır.',
-            'No problems found. Static analysis runs as you type; server validation runs on save or with F5.'
+            'Sorun bulunamadı. Statik analiz yazarken, sunucu doğrulaması da her değişiklikte otomatik çalışır (F5 ile elle de).',
+            'No problems found. Static analysis runs as you type; server validation also runs automatically on every change (or manually with F5).'
           )
         : l(
-            'Henüz doğrulama yapılmadı. Statik analiz yazarken, sunucu doğrulaması kaydedince ya da F5 ile çalışır.',
-            'Nothing validated yet. Static analysis runs as you type; server validation runs on save or with F5.'
+            'Henüz doğrulama yapılmadı. Statik analiz yazarken, sunucu doğrulaması da her değişiklikte otomatik çalışır (F5 ile elle de).',
+            'Nothing validated yet. Static analysis runs as you type; server validation also runs automatically on every change (or manually with F5).'
           )
       this.container.replaceChildren(empty)
       return
@@ -190,11 +192,7 @@ export class ProblemsPanel {
 
     const groups = new Map<string, ProblemEntry[]>()
     for (const doc of this.docs.documents) groups.set(this.docs.sourceId(doc), [])
-    for (const entry of entries) {
-      const group = groups.get(entry.source) ?? []
-      group.push(entry)
-      groups.set(entry.source, group)
-    }
+    for (const entry of entries) groups.get(entry.source)?.push(entry)
 
     const list = document.createElement('div')
     list.className = 'problem-list'
