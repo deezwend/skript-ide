@@ -27,7 +27,7 @@ import { cornerError, generateSkript, planDisplays, toDisplayTransform } from '.
 import { evaluate, formatValue } from '../src/geometry/expr'
 import { librarySource } from '../src/geometry/library'
 import { filledPolygon, partCorners, polyline, triangle, triangulate, type Part } from '../src/geometry/shapes'
-import { displayGeometryTool, mathEvalTool, writeDisplayLibraryTool, writeDisplayScriptTool, SCRIPT_MARKER } from '../src/tools/geometry'
+import { displayGeometryTool, mathEvalTool, upsertGeneratedBlock, writeDisplayLibraryTool, writeDisplayScriptTool, SCRIPT_MARKER } from '../src/tools/geometry'
 import { ToolError } from '../src/tool'
 import { makeContext, makeProject } from './helpers'
 
@@ -197,6 +197,15 @@ test('derleme hataları anlaşılır mesaj verir', async () => {
   await assert.rejects(compileScene({ shapes: [{ type: 'line', from: [0, 0], to: [1, 1, 1] }] }), /\[x, y, z\]/)
 })
 
+test('çok küçük tolerance parça üretmeden hemen reddedilir', async () => {
+  const started = Date.now()
+  await assert.rejects(compileScene({ shapes: [{ type: 'sphere', center: [0, 0, 0], radius: 100, tolerance: 1e-12 }] }), /more than \d+ block displays/)
+  await assert.rejects(compileScene({ shapes: [{ type: 'circle', center: [0, 0, 0], radius: 100, tolerance: 1e-15 }] }), /more than \d+ block displays/)
+  const control = Array.from({ length: 40 }, (_, i) => [i, (i * 7) % 5, 0])
+  await assert.rejects(compileScene({ shapes: [{ type: 'curve', points: control, tolerance: 1e-12 }] }), /more than \d+ block displays/)
+  assert.ok(Date.now() - started < 2000)
+})
+
 test('üretilen kod ve kütüphane Skript 2.17.1 tanılamasından hatasız geçer', async () => {
   const scene = await compileScene({ shapes: [{ type: 'triangle', points: [[0, 0, 0], [4, 1, 0], [1.3, 2, 3.7]], block: 'oak_stairs[facing=north]' }] })
   const service = new SkriptLanguageService({ loadDatabase: readSyntaxDatabase, skriptVersion: '2.17.1', addons: [] })
@@ -221,8 +230,8 @@ test('math_eval: vektör, kuaternion ve Minecraft yönleri', () => {
   assert.throws(() => evaluate('[1,2] + [1,2,3]'), /same size/)
 })
 
-test('tool\'lar: display_geometry özet verir, write_display_script dosya yazar ve elle yazılmış dosyayı korur', async () => {
-  const { root, cleanup } = await makeProject({ 'hand.sk': 'on join:\n\tsend "hi"\n', 'blank.sk': '\n' })
+test('tool\'lar: display_geometry özet verir, write_display_script/library mevcut dosyaya blok ekler ve elle yazılmış kodu korur', async () => {
+  const { root, cleanup } = await makeProject({ 'hand.sk': 'on join:\n    send "hi"\n', 'blank.sk': '\n' })
   try {
     const ctx = makeContext({ projectRoot: root })
     const shapes = [{ type: 'triangle', points: [[0, 0, 0], [4, 0, 0], [0, 0, 3]] }]
@@ -234,20 +243,45 @@ test('tool\'lar: display_geometry özet verir, write_display_script dosya yazar 
     const result = await writeDisplayScriptTool.execute({ path: 'draw/tri.sk', function_name: 'draw_tri', shapes }, ctx)
     assert.match(result, /Created draw\/tri\.sk/)
     const content = await readFile(join(root, 'draw', 'tri.sk'), 'utf8')
-    assert.ok(content.split('\n')[0].includes(SCRIPT_MARKER))
+    assert.match(content, /^# >>> display draw_tri /)
+    assert.ok(content.includes(SCRIPT_MARKER))
     assert.match(content, /function draw_tri\(origin: location, yaw: number = 0\) :: entities:/)
-    assert.match(await writeDisplayScriptTool.execute({ path: 'draw/tri.sk', function_name: 'draw_tri', shapes }, ctx), /Regenerated/)
-    await assert.rejects(writeDisplayScriptTool.execute({ path: 'hand.sk', function_name: 'x', shapes }, ctx), ToolError)
-    // Kullanıcının çizim için açtığı boş dosya yazılabilir
+    assert.match(await writeDisplayScriptTool.execute({ path: 'draw/tri.sk', function_name: 'draw_tri', shapes }, ctx), /Updated/)
+    assert.equal(await readFile(join(root, 'draw', 'tri.sk'), 'utf8'), content)
+
+    // Elle yazılmış dosyaya eklenir: kod korunur, girinti dosyaya uyar, ikinci çağrı bloğu yerinde günceller
+    await writeDisplayScriptTool.execute({ path: 'hand.sk', function_name: 'draw_hand', shapes }, ctx)
+    const hand = await readFile(join(root, 'hand.sk'), 'utf8')
+    assert.ok(hand.startsWith('on join:\n    send "hi"\n\n# >>> display draw_hand '))
+    assert.ok(!/^\t/m.test(hand), 'tablar dosyanın 4 boşluklu girintisine çevrilir')
+    await writeDisplayScriptTool.execute({ path: 'hand.sk', function_name: 'draw_hand', shapes, block: 'stone' }, ctx)
+    const updated = await readFile(join(root, 'hand.sk'), 'utf8')
+    assert.equal(updated.match(/# >>> display draw_hand/g)?.length, 1)
+    assert.match(updated, /"stone"/)
+
     assert.match(await writeDisplayScriptTool.execute({ path: 'blank.sk', function_name: 'draw_blank', shapes }, ctx), /blank\.sk: function draw_blank/)
     await assert.rejects(writeDisplayScriptTool.execute({ path: 'a.sk', function_name: 'bad name', shapes }, ctx), /function_name/)
+    await assert.rejects(writeDisplayScriptTool.execute({ path: 'a.txt', function_name: 'x', shapes }, ctx), ToolError)
 
-    assert.match(await writeDisplayLibraryTool.execute({}, ctx), /Created display-lib\.sk/)
-    assert.match(await writeDisplayLibraryTool.execute({}, ctx), /already up to date/)
+    assert.match(await writeDisplayLibraryTool.execute({ path: 'hand.sk' }, ctx), /Updated hand\.sk with the display math library/)
+    assert.match(await writeDisplayLibraryTool.execute({ path: 'hand.sk' }, ctx), /already up to date/)
+    assert.match(await readFile(join(root, 'hand.sk'), 'utf8'), /# <<< display draw_hand\n\n# >>> display library [\s\S]*function dg_qmul/)
     assert.equal(await mathEvalTool.execute({ expression: 'x = 2; x * [1, 2, 3]' }, ctx), 'x = 2\n[2, 4, 6]')
   } finally {
     await cleanup()
   }
+})
+
+test('upsertGeneratedBlock: eski sürümde tümü üretilmiş dosya blokla değiştirilir, CRLF korunur', () => {
+  const legacy = `# x: ${SCRIPT_MARKER}. Do not edit.\nfunction x(origin: location, yaw: number = 0) :: entities:\n\tstop\n`
+  assert.equal(
+    upsertGeneratedBlock(legacy, 'display x', 'new', SCRIPT_MARKER),
+    '# >>> display x (generated by Skript IDE; regenerate instead of editing)\nnew\n# <<< display x\n'
+  )
+  assert.equal(
+    upsertGeneratedBlock('on load:\r\n\tbroadcast "a"\r\n', 'display y', 'function y():\n\tstop', SCRIPT_MARKER),
+    'on load:\r\n\tbroadcast "a"\r\n\r\n# >>> display y (generated by Skript IDE; regenerate instead of editing)\r\nfunction y():\r\n\tstop\r\n# <<< display y\r\n'
+  )
 })
 
 test('obj dosyası okunur ve yüzleri çizilir', async () => {

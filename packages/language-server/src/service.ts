@@ -336,11 +336,21 @@ export class SkriptLanguageService {
 
   /** Açık olmayan çalışma alanı dosyaları. `complete=true` ise liste çalışma alanının tamamıdır. */
   setWorkspaceFiles(files: readonly { uri: string; text: string }[], complete: boolean): void {
-    this.workspaceFiles.clear()
-    this.workspaceCache.clear()
-    for (const file of files) {
-      this.workspaceFiles.set(uriKey(file.uri), { uri: file.uri, text: file.text })
+    const next = new Map<string, WorkspaceFile>()
+    for (const file of files) next.set(uriKey(file.uri), { uri: file.uri, text: file.text })
+    // Ajan her tool çağrısında tüm dosyaları yeniden verir; değişmeyen dosyanın ayrıştırması ve
+    // hiçbir şey değişmediyse fonksiyon/değişken indeksleri korunur (yoksa her çağrıda tüm proje yeniden ayrıştırılır)
+    const unchanged =
+      this.workspaceDeclared &&
+      this.workspaceComplete === complete &&
+      next.size === this.workspaceFiles.size &&
+      [...next].every(([key, file]) => this.workspaceFiles.get(key)?.text === file.text)
+    if (unchanged) return
+    for (const [key, file] of this.workspaceFiles) {
+      if (next.get(key)?.text !== file.text) this.workspaceCache.delete(key)
     }
+    this.workspaceFiles.clear()
+    for (const [key, file] of next) this.workspaceFiles.set(key, file)
     this.workspaceDeclared = true
     this.workspaceComplete = complete
     this.touch()

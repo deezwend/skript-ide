@@ -14,7 +14,6 @@ import {
   dot,
   fromColumns,
   length,
-  lerp,
   normalize,
   scale,
   sub,
@@ -338,10 +337,25 @@ export function ellipsePoint(center: Vec3, basis: { u: Vec3; v: Vec3 }, rx: numb
 
 /** Bezier eğrisi (herhangi bir derece), de Casteljau ile. */
 export function bezierPoint(control: readonly Vec3[], t: number): Vec3 {
-  let pts = [...control]
-  while (pts.length > 1) pts = pts.slice(1).map((p, i) => lerp(pts[i], p, t))
-  return pts[0]
+  // Yerinde hesaplanır: çok noktalı eğride her seviyede yeni dizi ayırmak örneklemeyi yavaşlatır
+  const xs = control.map((p) => p[0])
+  const ys = control.map((p) => p[1])
+  const zs = control.map((p) => p[2])
+  for (let n = control.length - 1; n > 0; n--) {
+    for (let i = 0; i < n; i++) {
+      xs[i] += (xs[i + 1] - xs[i]) * t
+      ys[i] += (ys[i + 1] - ys[i]) * t
+      zs[i] += (zs[i + 1] - zs[i]) * t
+    }
+  }
+  return [xs[0], ys[0], zs[0]]
 }
+
+/**
+ * Örnek sayısı üst sınırı; çok küçük tolerance ve çok noktalı eğride örnekleme uzun sürmesin.
+ * Sahnenin parça sınırından (4000) büyük olduğu için bu kadar örnekli eğri zaten reddedilir.
+ */
+const MAX_BEZIER_SAMPLES = 4096
 
 /**
  * Bezier'i, her parçanın eğriden sapması `tolerance`'ı aşmayana kadar ikiye bölerek örnekler.
@@ -350,6 +364,10 @@ export function bezierPoint(control: readonly Vec3[], t: number): Vec3 {
 export function sampleBezier(control: readonly Vec3[], tolerance: number): Vec3[] {
   const out: Vec3[] = [bezierPoint(control, 0)]
   const recurse = (t0: number, t1: number, p0: Vec3, p1: Vec3, depth: number): void => {
+    if (out.length >= MAX_BEZIER_SAMPLES) {
+      out.push(p1)
+      return
+    }
     let worst = 0
     for (const f of [0.25, 0.5, 0.75]) {
       const q = bezierPoint(control, t0 + (t1 - t0) * f)

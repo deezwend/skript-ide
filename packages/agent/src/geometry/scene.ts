@@ -83,8 +83,12 @@ export async function compileScene(input: {
   for (const [index, raw] of input.shapes.entries()) {
     const before = parts.length
     const label = `shapes[${index}] (${String(raw.type)})`
-    await compileShape(raw, label, defaults, { push: (part) => parts.push(part) }, warnings, options)
-    if (parts.length > MAX_PARTS) throw new GeometryError(`The scene needs more than ${MAX_PARTS} block displays; increase tolerance, use fewer/lower-resolution shapes or split it.`)
+    // Sınır parça eklenirken denetlenir: çok küçük tolerance milyonlarca parça üretmeden durur
+    const push = (part: Part) => {
+      if (parts.length >= MAX_PARTS) throw tooManyParts()
+      parts.push(part)
+    }
+    await compileShape(raw, label, defaults, { push }, warnings, options)
     summary.push(`${label}: ${parts.length - before} displays`)
   }
   if (parts.length > WARN_PARTS) warnings.push(`${parts.length} block displays is a lot for clients to render; consider a larger tolerance.`)
@@ -157,7 +161,7 @@ async function compileShape(
       // Elipste en büyük eğrilik küçük eksenin ucunda: r_eğrilik = b²/a
       const curvatureRadius = Math.min(radius, radius2) ** 2 / Math.max(radius, radius2)
       const fill = r.boolean('fill') ?? false
-      let n = arcSegments(curvatureRadius, sweep, tolerance, full ? 8 : 2)
+      let n = segmentCount(curvatureRadius, sweep, tolerance, full ? 8 : 2)
       if (full && n % 2) n++
       const at = (k: number): Vec3 => ellipsePoint(center, basis, radius, radius2, start + (sweep * k) / n)
       if (!fill) {
@@ -187,7 +191,7 @@ async function compileShape(
       const axis = sub(to, from)
       if (length(axis) === 0) throw new GeometryError(`${label}: from and to are the same point.`)
       const basis = planeBasis(axis)
-      let n = arcSegments(radius, 2 * Math.PI, tolerance, 6)
+      let n = segmentCount(radius, 2 * Math.PI, tolerance, 6)
       if (n % 2) n++
       // Yan yüzler: her biri düzlemsel dikdörtgen (1 parça); kalınlık kirişin ortasına
       for (let k = 0; k < n; k++) {
@@ -208,7 +212,7 @@ async function compileShape(
     case 'sphere': {
       const center = r.requireVec('center')
       const radius = r.requirePositive('radius')
-      const lon = evenUp(arcSegments(radius, 2 * Math.PI, tolerance, 8))
+      const lon = evenUp(segmentCount(radius, 2 * Math.PI, tolerance, 8))
       const lat = Math.max(2, Math.ceil(lon / 2))
       const point = (i: number, j: number): Vec3 => {
         const phi = (Math.PI * i) / lat
@@ -301,6 +305,16 @@ function polygonNormal(points: readonly Vec3[]): Vec3 | undefined {
 
 const degrees = (value: number): number => (value * Math.PI) / 180
 const evenUp = (n: number): number => (n % 2 ? n + 1 : n)
+
+const tooManyParts = () =>
+  new GeometryError(`The scene needs more than ${MAX_PARTS} block displays; increase tolerance, use fewer/lower-resolution shapes or split it.`)
+
+/** Her segment en az bir parça olduğu için sınırı aşan sayı nokta üretilmeden reddedilir. */
+function segmentCount(radius: number, sweepRadians: number, tolerance: number, minimum: number): number {
+  const n = arcSegments(radius, sweepRadians, tolerance, minimum)
+  if (!(n <= MAX_PARTS)) throw tooManyParts()
+  return n
+}
 
 function positive(value: number, name: string): number {
   if (!(typeof value === 'number' && Number.isFinite(value) && value > 0)) throw new GeometryError(`${name} must be a positive number.`)

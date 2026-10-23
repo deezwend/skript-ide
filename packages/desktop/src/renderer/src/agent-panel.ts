@@ -56,6 +56,43 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return node
 }
 
+/** Satır içi `kod` ve **kalın** yazıyı ekler; geri kalan metin olduğu gibi kalır. */
+function appendInline(node: HTMLElement, text: string): HTMLElement {
+  let last = 0
+  for (const match of text.matchAll(/`([^`\n]+)`|\*\*(?=\S)([^\n]*?\S)\*\*/g)) {
+    node.append(text.slice(last, match.index))
+    node.append(match[1] !== undefined ? el('code', 'agent-inline-code', match[1]) : el('strong', undefined, match[2]))
+    last = match.index + match[0].length
+  }
+  node.append(text.slice(last))
+  return node
+}
+
+const HEADING_TAGS = ['h3', 'h4', 'h5'] as const
+
+/** Kod bloğu dışındaki metin: `#`…`######` satırları başlık olur, aradaki satırlar satır sonlarıyla gösterilir. */
+function markdownBlocks(text: string): HTMLElement[] {
+  const blocks: HTMLElement[] = []
+  let paragraph: string[] = []
+  const flush = () => {
+    const body = paragraph.join('\n').trim()
+    if (body) blocks.push(appendInline(el('div', 'agent-text'), body))
+    paragraph = []
+  }
+  for (const line of text.split('\n')) {
+    const heading = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/.exec(line)
+    if (!heading || !heading[2]) {
+      paragraph.push(line)
+      continue
+    }
+    flush()
+    const tag = HEADING_TAGS[Math.min(heading[1].length, HEADING_TAGS.length) - 1]
+    blocks.push(appendInline(el(tag, 'agent-heading'), heading[2]))
+  }
+  flush()
+  return blocks
+}
+
 /** Değişiklik miktarı: yeşil `+eklenen`, kırmızı `-silinen` satır. */
 function diffStatBadge({ added, removed }: DiffStat): HTMLElement {
   const badge = el('span', 'agent-diff-stat')
@@ -180,6 +217,9 @@ export class AgentPanel {
   private readonly toolRows = new Map<string, HTMLElement>()
   /** Akmakta olan yanıtın geçici görünümü; yanıt tamamlanınca kalıcı haliyle değiştirilir. */
   private live: { root: HTMLElement; reasoning?: HTMLDetailsElement; text?: HTMLElement } | null = null
+  /** Henüz çizilmemiş akan parçalar; kare başına bir kez çizilir (her parçada ölçüp kaydırmak paneli kilitler). */
+  private pendingDeltas: { kind: 'text' | 'reasoning'; text: string }[] = []
+  private deltaFrame: number | null = null
   private readonly disposers: (() => void)[] = []
   private readonly menu = el('div', 'agent-commands')
   private menuMatches: MenuItem[] = []
@@ -1440,6 +1480,8 @@ export class AgentPanel {
       this.handleBackgroundEvent(event)
       return
     }
+    // Diğer olaylar canlı görünümü değiştirebilir; önce bekleyen metin çizilir ki sıra bozulmasın
+    if (event.type !== 'delta') this.flushDeltas()
     switch (event.type) {
       case 'user-message':
         this.ui.transcript.querySelector('.agent-empty')?.remove()
@@ -1570,6 +1612,9 @@ export class AgentPanel {
     this.subagents.clear()
     this.subagentCards.clear()
     this.subagentRows.clear()
+    this.pendingDeltas = []
+    if (this.deltaFrame !== null) cancelAnimationFrame(this.deltaFrame)
+    this.deltaFrame = null
     this.live = null
     this.ui.transcript.replaceChildren()
   }
@@ -1619,8 +1664,20 @@ export class AgentPanel {
     }
   }
 
-  /** Akan parçayı canlı görünüme ekler: düşünme açık bir kutuda, yanıt metni altında. */
+  /** Akan parçayı sıraya alır; bir sonraki karede toplu çizilir. */
   private renderDelta(kind: 'text' | 'reasoning', text: string): void {
+    const last = this.pendingDeltas.at(-1)
+    if (last?.kind === kind) last.text += text
+    else this.pendingDeltas.push({ kind, text })
+    this.deltaFrame ??= requestAnimationFrame(() => this.flushDeltas())
+  }
+
+  /** Bekleyen parçaları canlı görünüme ekler: düşünme açık bir kutuda, yanıt metni altında. */
+  private flushDeltas(): void {
+    if (this.deltaFrame !== null) cancelAnimationFrame(this.deltaFrame)
+    this.deltaFrame = null
+    const pending = this.pendingDeltas.splice(0)
+    if (pending.length === 0) return
     const transcript = this.ui.transcript
     const atBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 40
     if (!this.live) {
@@ -1628,25 +1685,28 @@ export class AgentPanel {
       transcript.append(this.live.root)
     }
     const live = this.live
-    if (kind === 'reasoning') {
-      if (!live.reasoning) {
-        live.reasoning = this.reasoningBox('', true)
-        live.root.insertBefore(live.reasoning, live.text?.parentElement ?? null)
+    let reasoningBody: Element | null = null
+    for (const { kind, text } of pending) {
+      if (kind === 'reasoning') {
+        if (!live.reasoning) {
+          live.reasoning = this.reasoningBox('', true)
+          live.root.insertBefore(live.reasoning, live.text?.parentElement ?? null)
+        }
+        reasoningBody = live.reasoning.querySelector('.agent-reasoning-body')!
+        reasoningBody.append(text)
+      } else {
+        if (!live.text) {
+          const container = el('div', 'agent-msg assistant')
+          live.text = el('div', 'agent-text')
+          container.append(live.text)
+          live.root.append(container)
+          // Yanıt başladı: düşünme bitti, kutu kapanıp yer açar
+          this.closeReasoning(live.reasoning)
+        }
+        live.text.append(text)
       }
-      const body = live.reasoning.querySelector('.agent-reasoning-body')!
-      body.append(text)
-      body.scrollTop = body.scrollHeight
-    } else {
-      if (!live.text) {
-        const container = el('div', 'agent-msg assistant')
-        live.text = el('div', 'agent-text')
-        container.append(live.text)
-        live.root.append(container)
-        // Yanıt başladı: düşünme bitti, kutu kapanıp yer açar
-        this.closeReasoning(live.reasoning)
-      }
-      live.text.append(text)
     }
+    if (reasoningBody) reasoningBody.scrollTop = reasoningBody.scrollHeight
     if (atBottom) transcript.scrollTop = transcript.scrollHeight
   }
 
@@ -1714,7 +1774,7 @@ export class AgentPanel {
     return box
   }
 
-  /** Kod bloklarını (```) ayırır; geri kalan metin olduğu gibi (satır sonlarıyla) gösterilir. */
+  /** Kod bloklarını (```) ayırır; geri kalan metinde başlıklar, **kalın** ve `kod` işlenir. */
   private assistantText(text: string): HTMLElement {
     const container = el('div', 'agent-msg assistant')
     const parts = text.split(/```[^\n]*\n?/)
@@ -1725,7 +1785,7 @@ export class AgentPanel {
         pre.append(el('code', undefined, part.replace(/\n$/, '')))
         container.append(pre)
       } else {
-        container.append(el('div', 'agent-text', part.trim()))
+        container.append(...markdownBlocks(part))
       }
     })
     return container
