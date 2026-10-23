@@ -28,8 +28,13 @@ export {
   type AgentLanguageService,
   type AgentTool,
   type ApprovalRequest,
+  type ConversationArchive,
+  type ConversationInfo,
   type FileChange,
   type JsonSchema,
+  type SubagentModel,
+  type SubagentRequest,
+  type SubagentRunner,
   type ToolContext,
   type ToolDiagnostic,
   type ToolPermission,
@@ -43,6 +48,15 @@ export {
   PERMISSION_MODES,
   type PermissionMode
 } from './permission'
+export {
+  AGENT_MODES,
+  DEFAULT_AGENT_MODE,
+  isAgentMode,
+  modeInstructions,
+  SCOPE_INSTRUCTIONS,
+  toolAllowedInMode,
+  type AgentMode
+} from './mode'
 export { ToolRegistry, validateInput, type ToolDefinition } from './registry'
 export {
   addUsage,
@@ -124,7 +138,42 @@ export {
   projectMemoryUpdate,
   type ProjectMemory
 } from './project-memory'
+export {
+  latestMemory,
+  loadMemory,
+  MAX_MEMORY_CHARS,
+  MAX_MEMORY_ENTRY_CHARS,
+  MEMORY_INSTRUCTIONS,
+  memoryEntries,
+  memoryText,
+  memoryUpdate,
+  parseMemory,
+  PROJECT_MEMORY_FILE,
+  type MemoryScope
+} from './memory'
+export { forgetTool, memoryTools, rememberTool } from './tools/memory'
+export {
+  attachedConversationText,
+  conversationLabel,
+  conversationPage,
+  conversationTranscript,
+  CONVERSATION_PAGE_CHARS,
+  MAX_ATTACHED_CONVERSATION_CHARS,
+  resolveConversation,
+  searchConversations,
+  shortId,
+  type ConversationMatch
+} from './conversations'
+export { conversationTools, readConversationTool, searchConversationsTool } from './tools/conversations'
 export { latestTodos, MAX_TODOS, todoTool } from './tools/todo'
+export {
+  listModelsTool,
+  resolveSubagentEffort,
+  resolveSubagentModel,
+  runSubagentTool,
+  SUBAGENT_TOOL_NAMES,
+  subagentTools
+} from './tools/subagent'
 export {
   coreTools,
   deleteFileTool,
@@ -169,6 +218,11 @@ export {
 } from './tools/geometry'
 export {
   attachmentText,
+  conversationAttachmentText,
+  conversationMention,
+  conversationMentionRef,
+  CONVERSATION_MENTION_PREFIX,
+  CONVERSATION_REF_LENGTH,
   formatMention,
   isProblemsMention,
   parseAttachment,

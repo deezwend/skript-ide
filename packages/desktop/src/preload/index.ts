@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IpcChannel, type AgentUiEvent, type MenuAction, type ServerStatus, type SkriptIdeApi } from '../shared/ipc'
+import { IpcChannel, type AgentEvent, type MenuAction, type ServerStatus, type SkriptIdeApi, type UpdateStatus } from '../shared/ipc'
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_event: IpcRendererEvent, value: T) => listener(value)
@@ -61,8 +61,17 @@ const api: SkriptIdeApi = {
   agentSetGoal: (goal) => ipcRenderer.invoke(IpcChannel.agentSetGoal, goal),
   agentCompact: () => ipcRenderer.invoke(IpcChannel.agentCompact),
   agentSetPermissionMode: (mode) => ipcRenderer.invoke(IpcChannel.agentSetPermissionMode, mode),
+  agentSetAgentMode: (mode) => ipcRenderer.invoke(IpcChannel.agentSetAgentMode, mode),
   agentRespondApproval: (id, approved) => ipcRenderer.send(IpcChannel.agentApproval, id, approved),
-  onAgentEvent: (listener) => subscribe<AgentUiEvent>(IpcChannel.agentEvent, listener)
+  onAgentEvent: (listener) => subscribe<AgentEvent>(IpcChannel.agentEvent, listener),
+  appVersion: ipcRenderer.sendSync(IpcChannel.appVersion),
+  getUpdateStatus: () => ipcRenderer.invoke(IpcChannel.updateStatus),
+  checkForUpdates: () => ipcRenderer.invoke(IpcChannel.updateCheck),
+  downloadUpdate: () => ipcRenderer.invoke(IpcChannel.updateDownload),
+  installUpdate: () => ipcRenderer.invoke(IpcChannel.updateInstall),
+  onUpdateStatus: (listener) => subscribe<UpdateStatus>(IpcChannel.updateStatusChanged, listener),
+  getReleaseNotes: (version) => ipcRenderer.invoke(IpcChannel.releaseNotes, version),
+  takeWhatsNew: () => ipcRenderer.invoke(IpcChannel.whatsNew)
 }
 
 contextBridge.exposeInMainWorld('skriptIde', api)

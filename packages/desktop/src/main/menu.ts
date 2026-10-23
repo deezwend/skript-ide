@@ -1,12 +1,13 @@
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import { getLocale, l, LOCALE_NAMES, LOCALES, type Locale } from '@skript-ide/i18n'
 import { IpcChannel, type MenuAction } from '../shared/ipc'
+import type { Updater } from './updater'
 
 function send(action: MenuAction) {
   return () => BrowserWindow.getFocusedWindow()?.webContents.send(IpcChannel.menuAction, action)
 }
 
-export function buildAppMenu(onSelectLocale: (locale: Locale) => void): Menu {
+export function buildAppMenu(onSelectLocale: (locale: Locale) => void, updater: Updater): Menu {
   // Geri al / yinele Monaco'ya bırakıldı. Menüye eklenirse kısayolları Monaco'dan önce yakalanır.
   const template: MenuItemConstructorOptions[] = [
     {
@@ -76,6 +77,21 @@ export function buildAppMenu(onSelectLocale: (locale: Locale) => void): Menu {
               { label: l('Yeniden Yükle', 'Reload'), role: 'reload' as const },
               { label: l('Geliştirici Araçları', 'Developer Tools'), role: 'toggleDevTools' as const }
             ])
+      ]
+    },
+    {
+      label: l('Yardım', 'Help'),
+      submenu: [
+        { label: l('Güncellemeleri Denetle...', 'Check for Updates...'), click: () => updater.check(true) },
+        {
+          label: l('Otomatik Güncelle', 'Update Automatically'),
+          type: 'checkbox',
+          checked: updater.autoUpdate,
+          click: (item) => updater.setAutoUpdate(item.checked)
+        },
+        { type: 'separator' },
+        { label: l('Yenilikler...', "What's New..."), click: send('whats-new') },
+        { label: l(`Sürüm ${app.getVersion()}`, `Version ${app.getVersion()}`), enabled: false }
       ]
     }
   ]

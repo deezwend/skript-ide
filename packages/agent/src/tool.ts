@@ -1,6 +1,7 @@
 /** Agent'ın çağırabileceği tool'ların sözleşmesi. Temel ve Skript tool'ları aynı arayüzü uygular. */
 
 import type { SkriptServer } from '@skript-ide/runtime-validator'
+import type { Message } from './messages'
 
 /** LLM'e gönderilen girdi şeması; tüm büyük sağlayıcıların kabul ettiği JSON Schema alt kümesi. */
 export interface JsonSchema {
@@ -231,6 +232,63 @@ export interface ToolContext {
   server?: Pick<SkriptServer, 'currentStatus' | 'isEulaAccepted' | 'validate' | 'runCommands' | 'readLog'>
   /** `update_todos` listeyi değiştirdiğinde çağrılır; arayüz plan listesini bundan çizer. */
   onTodosChanged?(todos: readonly Todo[]): void
+  /** Kullanıcı hafızasının (tüm projeler) mutlak yolu; yoksa `remember`/`forget` yalnızca proje kapsamında çalışır. */
+  userMemoryFile?: string | null
+  /** Kayıtlı geçmiş konuşmalar; yoksa `search_conversations`/`read_conversation` hata döndürür. */
+  conversations?: ConversationArchive
+  /** Alt agent çalıştırıcısı; yoksa `run_subagent`/`list_models` hata döndürür. */
+  subagents?: SubagentRunner
+  /** Döngünün o an çalıştırdığı tool çağrısının kimliği; arayüz alt agent'ı çağrının satırına bağlar. */
+  callId?: string
+}
+
+/** Alt agent'ın kullanabileceği bir model. */
+export interface SubagentModel {
+  /** `sağlayıcı/model`. */
+  id: string
+  name: string
+  /** Desteklenen effort seviyeleri; boşsa effort ayarı yok. */
+  effortLevels: readonly string[]
+  contextWindow?: number
+  /** 1M token başına USD. */
+  cost?: { input: number; output: number }
+  /** Ana agent'ın şu an kullandığı model. */
+  current: boolean
+}
+
+export interface SubagentRequest {
+  /** Kullanıcıya gösterilen kısa başlık. */
+  description: string
+  prompt: string
+  /** `sağlayıcı/model`; yoksa ana agent'ın modeli ve effort'u. */
+  modelId?: string
+  /** Doğrulanmış effort seviyesi; yoksa sağlayıcının varsayılanı (model verildiyse). */
+  effort?: string
+}
+
+/** Alt agent'ları çalıştıran taraf (masaüstü uygulaması). */
+export interface SubagentRunner {
+  models(): Promise<readonly SubagentModel[]>
+  /** Alt agent'ı bitene kadar çalıştırır; son mesajını döndürür. İptal `ctx.signal` ile yapılır. */
+  run(request: SubagentRequest, ctx: ToolContext): Promise<string>
+}
+
+/** Kayıtlı bir konuşmanın özeti (mesajlar olmadan). */
+export interface ConversationInfo {
+  id: string
+  title: string
+  /** Epoch ms. */
+  updatedAt: number
+  projectRoot: string | null
+  /** Kullanıcının gönderdiği mesaj sayısı. */
+  turns: number
+}
+
+/** Geçmiş konuşmalara salt okunur erişim; açık konuşma listede yer almaz. */
+export interface ConversationArchive {
+  /** Yeniden eskiye. */
+  list(): Promise<readonly ConversationInfo[]>
+  read(id: string): Promise<{ info: ConversationInfo; messages: readonly Message[] } | null>
 }
 
 export interface AgentTool<I = any> {

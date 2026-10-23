@@ -127,6 +127,7 @@
             <select id="agent-model-select" title="Model" data-en-title="Model"></select>
             <select id="agent-effort-select" title="Düşünme seviyesi (effort)" data-en-title="Reasoning effort"></select>
             <select id="agent-permission-select" title="İzin modu" data-en-title="Permission mode"></select>
+            <select id="agent-mode-select" title="Agent modu" data-en-title="Agent mode"></select>
           </div>
           <div class="agent-composer-bar">
             <span id="agent-status"></span>
@@ -148,6 +149,7 @@
       <span id="status-language"></span>
       <button id="status-skript" class="status-item" aria-haspopup="listbox" aria-expanded="false"></button>
       <button id="status-addons" class="status-item"></button>
+      <button id="status-update" class="status-item" hidden></button>
       <button id="status-agent" class="status-item" title="AI Agent (Ctrl+Shift+A)" data-en-title="AI Agent (Ctrl+Shift+A)">✦ Agent</button>
     </footer>
 
@@ -179,6 +181,9 @@
     <dialog id="agent-sessions-dialog" class="wide-dialog" aria-label="Konuşma geçmişi" data-en-aria-label="Conversation history"></dialog>
     <dialog id="agent-settings-dialog" class="wide-dialog" aria-label="Agent Ayarları" data-en-aria-label="Agent Settings"></dialog>
     <dialog id="migration-dialog" class="wide-dialog" aria-label="Sürüm Geçiş Asistanı" data-en-aria-label="Version Migration Assistant"></dialog>
+
+    <dialog id="update-dialog" class="wide-dialog" aria-label="Güncelleme" data-en-aria-label="Update"></dialog>
+    <dialog id="whats-new-dialog" class="wide-dialog" aria-label="Yenilikler" data-en-aria-label="What's New"></dialog>
 
     <script type="module" src="./src/main.ts"></script>
   </body>

@@ -65,6 +65,9 @@ function createBrowserFallback(): SkriptIdeApi {
     validateOnVersion: async () => unavailable(),
     agentGetState: async () => ({
       settings: { providerId: null, modelId: null, effort: null, permissionMode: 'ask-when-needed' },
+      parent: null,
+      subagents: [],
+      subagentModel: null,
       sessionId: null,
       running: false,
       messages: [],
@@ -89,7 +92,8 @@ function createBrowserFallback(): SkriptIdeApi {
         reBilledCount: 0,
         byModel: []
       },
-      permissionMode: 'ask-when-needed'
+      permissionMode: 'ask-when-needed',
+      agentMode: 'standard'
     }),
     agentListProviders: async () => unavailable(),
     agentSetSettings: async () => unavailable(),
@@ -110,8 +114,17 @@ function createBrowserFallback(): SkriptIdeApi {
     agentSetGoal: async () => unavailable(),
     agentCompact: async () => unavailable(),
     agentSetPermissionMode: async () => unavailable(),
+    agentSetAgentMode: async () => unavailable(),
     agentRespondApproval: () => {},
-    onAgentEvent: () => () => {}
+    onAgentEvent: () => () => {},
+    appVersion: '-',
+    getUpdateStatus: async () => ({ state: 'unsupported' }),
+    checkForUpdates: async () => {},
+    downloadUpdate: async () => unavailable(),
+    installUpdate: async () => unavailable(),
+    onUpdateStatus: () => () => {},
+    getReleaseNotes: async () => unavailable(),
+    takeWhatsNew: async () => null
   }
 }
 

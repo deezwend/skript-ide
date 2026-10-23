@@ -1,6 +1,7 @@
 /** Ana süreç ile arayüz arasındaki sözleşme. Preload bunu `window.skriptIde` olarak açar. */
 
 import type {
+  AgentMode,
   AgentStopReason,
   ApprovalRequest,
   CatalogProvider,
@@ -24,6 +25,7 @@ import type {
 } from '@skript-ide/runtime-validator'
 
 export type {
+  AgentMode,
   ApprovalRequest,
   CatalogModel,
   CatalogProvider,
@@ -101,6 +103,29 @@ export type MenuAction =
   | 'addons'
   | 'migration'
   | 'toggle-agent'
+  | 'whats-new'
+
+// --- Güncellemeler ---
+
+/**
+ * Güncelleyicinin durumu. `unsupported`: geliştirme modu ya da kurulumsuz çalıştırma; güncelleme denetlenmez.
+ * `manual`: durum kullanıcının elle başlattığı bir denetimden geliyor (arayüz sonucu pencerede gösterir).
+ */
+export type UpdateStatus = { manual?: boolean } & (
+  | { state: 'idle' | 'checking' | 'not-available' | 'unsupported' }
+  | { state: 'available'; version: string; notes: string | null }
+  | { state: 'downloading'; version: string; percent: number }
+  | { state: 'downloaded'; version: string; notes: string | null }
+  | { state: 'error'; error: string }
+)
+
+/** Bir sürümün yayın notları; `html` GitHub'ın işlediği HTML'dir, arayüz göstermeden önce temizler. */
+export interface ReleaseNotes {
+  version: string
+  html: string | null
+  /** Sürümün GitHub sayfası. */
+  url: string
+}
 
 export interface ValidateRequest {
   /** Sonucu belgeyle eşlemek için kimlik: dosya yolu ya da kaydedilmemiş belgede `untitled:<id>`. */
@@ -142,6 +167,8 @@ export interface AgentSessionInfo {
   projectRoot: string | null
   /** Kullanıcının gönderdiği mesaj sayısı. */
   turns: number
+  /** Turu sürüyorsa: çalışıyor ya da onay bekliyor. Boştaki konuşmada yok. */
+  status?: 'running' | 'approval'
 }
 
 /** Konuşmanın şimdiye dek harcadığı token'lar, önbellek performansı ve maliyeti. */
@@ -173,13 +200,41 @@ export interface AgentUsage {
   byModel: { key: string; tokens: number; cost: number }[]
 }
 
+/** Ana agent'ın `run_subagent` ile başlattığı alt agent; kendi konuşması (oturumu) ve kullanımı vardır. */
+export interface AgentSubagentInfo {
+  /** Alt agent'ı başlatan `run_subagent` çağrısı; panel kartı bu satırın altına çizer. */
+  callId: string
+  /** Alt agent'ın konuşma kimliği; `agentLoadSession` ile açılır. */
+  sessionId: string
+  title: string
+  providerId: string
+  modelId: string
+  /** Katalogdaki görünen ad. */
+  modelName: string
+  effort: string | null
+  status: 'running' | 'done' | 'error' | 'cancelled'
+  /** Alt agent'ın yaptığı tool çağrısı sayısı. */
+  toolCalls: number
+  usage: AgentUsage
+}
+
 export interface AgentState {
   settings: AgentSettings
-  /** Açık konuşmanın kimliği; ilk mesaj gönderilene kadar `null`. */
+  /** Açık konuşma bir alt agent'sa onu başlatan konuşma; alt agent konuşmasına mesaj yazılamaz. */
+  parent: { id: string; title: string } | null
+  /** Açık konuşmanın başlattığı alt agent'lar. */
+  subagents: AgentSubagentInfo[]
+  /** Alt agent konuşmasında kullanılan model ve effort; ana konuşmada `null` (ayarlardaki seçim geçerli). */
+  subagentModel: { providerId: string; modelId: string; effort: string | null } | null
+  /** Açık konuşmanın kimliği; olaylar bununla eşleşir. Kayıt dosyası ilk mesajla oluşur. */
   sessionId: string | null
   running: boolean
-  /** Şu anki konuşma; panel yeniden yüklendiğinde geçmişi buradan kurar. */
+  /** Şu anki konuşma; tur sürüyorsa o ana kadarki haliyle. Panel geçmişi buradan kurar. */
   messages: Message[]
+  /** Tur sürerken akmakta olan yanıtın şimdiye kadarki kısmı; yoksa `null`. */
+  streaming?: { text: string; reasoning: string } | null
+  /** Açık konuşmada yanıt bekleyen onaylar; panel konuşmaya dönünce kartları yeniden çizer. */
+  approvals?: { id: number; request: ApprovalRequest }[]
   /** Seçili sağlayıcının anahtar kaynağı. */
   keySource: ApiKeySource
   /** ChatGPT aboneliği (Codex) oturumu; giriş yapılmadıysa `signedIn: false`. */
@@ -195,6 +250,8 @@ export interface AgentState {
   usage: AgentUsage
   /** Şu an geçerli izin modu; yeni konuşmada `settings.permissionMode`'a döner. */
   permissionMode: PermissionMode
+  /** Açık konuşmanın modu; ilk mesajdan sonra değişmez, yeni konuşma son seçilen modla başlar. */
+  agentMode: AgentMode
 }
 
 /** `/undo` sonucu: son kullanıcı mesajı ve cevapları geçmişten silindi, agent'ın yazdığı dosyalar geri alındı. */
@@ -244,6 +301,14 @@ export type AgentUiEvent =
   | { type: 'done'; reason: AgentStopReason | 'cancelled' | 'error'; error?: string }
   /** `/btw` yanıtının akan metni; `id` panelin verdiği soru kimliğidir. */
   | { type: 'btw-delta'; id: number; text: string }
+  /** Bu konuşmanın bir alt agent'ı başladı, ilerledi ya da bitti. */
+  | { type: 'subagent'; info: AgentSubagentInfo }
+
+/**
+ * Ana süreçten gelen olay: hangi konuşmaya ait olduğuyla; konuşmalar aynı anda çalışabilir.
+ * `parentId`: olay bir alt agent konuşmasınınsa onu başlatan konuşma.
+ */
+export type AgentEvent = AgentUiEvent & { sessionId: string; parentId?: string }
 
 export interface SkriptIdeApi {
   openFolderDialog(): Promise<string | null>
@@ -336,11 +401,11 @@ export interface SkriptIdeApi {
   agentBtw(id: number, question: string): Promise<string>
   agentBtwCancel(id: number): Promise<void>
   agentCancel(): Promise<void>
-  /** Yeni konuşma başlatır (çalışıyorsa önce durdurur). */
+  /** Yeni konuşma başlatır; açık konuşmanın süren turu arka planda devam eder. */
   agentReset(): Promise<void>
   /** Kayıtlı konuşmalar, en son güncellenen başta. */
   agentListSessions(): Promise<AgentSessionInfo[]>
-  /** Kayıtlı bir konuşmayı açar (çalışıyorsa önce durdurur). */
+  /** Kayıtlı bir konuşmayı açar; açık konuşmanın süren turu arka planda devam eder. */
   agentLoadSession(id: string): Promise<AgentState>
   agentDeleteSession(id: string): Promise<AgentState>
   /** Son kullanıcı mesajını ve sonrasını geri alır; o turda agent'ın yazdığı dosyaları eski haline döndürür. */
@@ -351,8 +416,29 @@ export interface SkriptIdeApi {
   agentCompact(): Promise<AgentCompactResult>
   /** Geçerli izin modunu değiştirir (çalışan tur dahil); varsayılan `agentSetSettings` ile değişir. */
   agentSetPermissionMode(mode: PermissionMode): Promise<AgentState>
+  /** Agent modunu değiştirir; yalnızca konuşmada henüz mesaj yokken çalışır. */
+  agentSetAgentMode(mode: AgentMode): Promise<AgentState>
   agentRespondApproval(id: number, approved: boolean): void
-  onAgentEvent(listener: (event: AgentUiEvent) => void): () => void
+  onAgentEvent(listener: (event: AgentEvent) => void): () => void
+
+  // --- Güncellemeler ---
+  /** Uygulamanın sürümü (`package.json`). */
+  appVersion: string
+  getUpdateStatus(): Promise<UpdateStatus>
+  /** Güncellemeleri hemen denetler; sonuç `onUpdateStatus` ile `manual: true` olarak gelir. */
+  checkForUpdates(): Promise<void>
+  /** Otomatik indirme kapalıyken bulunan güncellemeyi indirir. */
+  downloadUpdate(): Promise<void>
+  /** İndirilen güncellemeyi kurmak için uygulamayı kapatıp yeniden açar. */
+  installUpdate(): Promise<void>
+  onUpdateStatus(listener: (status: UpdateStatus) => void): () => void
+  /** Sürümün yayın notları; `version` verilmezse çalışan sürümünkiler. */
+  getReleaseNotes(version?: string): Promise<ReleaseNotes>
+  /**
+   * Uygulama yeni bir sürüme güncellendikten sonraki ilk açılışta o sürümü döndürür (bir kez);
+   * aksi halde `null`. İlk kurulumda pencere gösterilmez.
+   */
+  takeWhatsNew(): Promise<string | null>
 }
 
 export const IpcChannel = {
@@ -408,6 +494,15 @@ export const IpcChannel = {
   agentSetGoal: 'agent:set-goal',
   agentCompact: 'agent:compact',
   agentSetPermissionMode: 'agent:set-permission-mode',
+  agentSetAgentMode: 'agent:set-agent-mode',
   agentApproval: 'agent:approval',
-  agentEvent: 'agent:event'
+  agentEvent: 'agent:event',
+  updateStatus: 'update:status',
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateInstall: 'update:install',
+  updateStatusChanged: 'update:status-changed',
+  releaseNotes: 'update:release-notes',
+  whatsNew: 'update:whats-new',
+  appVersion: 'app:version'
 } as const

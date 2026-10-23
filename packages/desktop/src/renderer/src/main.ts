@@ -25,6 +25,7 @@ import { basename, dirname, extname, samePath } from './paths'
 import { ProblemsPanel } from './problems'
 import { SyntaxBrowser } from './syntax-browser'
 import { renderTabs } from './tabs'
+import { UpdateUi } from './updates'
 
 import { l } from '@skript-ide/i18n'
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!
@@ -730,6 +731,7 @@ const agentPanel = new AgentPanel(
     modelSelect: $<HTMLSelectElement>('#agent-model-select'),
     effortSelect: $<HTMLSelectElement>('#agent-effort-select'),
     permissionSelect: $<HTMLSelectElement>('#agent-permission-select'),
+    modeSelect: $<HTMLSelectElement>('#agent-mode-select'),
     newButton: $<HTMLButtonElement>('#agent-new'),
     historyButton: $<HTMLButtonElement>('#agent-history'),
     sessionsDialog: $<HTMLDialogElement>('#agent-sessions-dialog'),
@@ -836,6 +838,7 @@ const actions: Record<MenuAction, () => unknown> = {
     migrationView.open()
   },
   'toggle-agent': () => agentPanel.toggle(),
+  'whats-new': () => updateUi.showWhatsNew(),
   'go-to-symbol': () => {
     if (!docs.active) {
       showStatus(l('Sembole gitmek için önce bir dosya aç', 'Open a file first to go to a symbol'), 'error')
@@ -844,6 +847,12 @@ const actions: Record<MenuAction, () => unknown> = {
     editor.trigger('menu', 'editor.action.quickOutline', null)
   }
 }
+
+const updateUi = new UpdateUi(
+  $<HTMLButtonElement>('#status-update'),
+  $<HTMLDialogElement>('#update-dialog'),
+  $<HTMLDialogElement>('#whats-new-dialog')
+)
 
 api.onMenuAction((action) => void run(actions[action]))
 
@@ -917,6 +926,6 @@ void run(async () => {
 if (import.meta.env.DEV) {
   // Geliştirirken konsoldan erişmek için
   Object.assign(window, {
-    __skriptIde: { editor, docs, monaco, problems, syntaxBrowser, languageServer, outline, agentPanel }
+    __skriptIde: { editor, docs, monaco, problems, syntaxBrowser, languageServer, outline, agentPanel, updateUi }
   })
 }

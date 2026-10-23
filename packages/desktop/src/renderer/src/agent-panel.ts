@@ -1,6 +1,9 @@
 import type {
+  AgentMode,
   AgentSessionInfo,
+  AgentEvent,
   AgentState,
+  AgentSubagentInfo,
   AgentUiEvent,
   AgentUsage,
   ApiKeySource,
@@ -19,14 +22,24 @@ import type {
 import { api } from './api'
 import { monaco } from './monaco'
 
-import { formatMention, isProblemsMention, parseAttachment, parseMentions } from '@skript-ide/agent/src/mentions'
+import {
+  CONVERSATION_MENTION_PREFIX,
+  conversationMention,
+  formatMention,
+  isProblemsMention,
+  parseAttachment,
+  parseMentions
+} from '@skript-ide/agent/src/mentions'
 import { isEditorContext, type EditorContext } from '@skript-ide/agent/src/editor-context'
 import { isConversationSummary } from '@skript-ide/agent/src/compaction'
 import { parseGoal } from '@skript-ide/agent/src/goal'
 import { parseProjectInstructions } from '@skript-ide/agent/src/project-memory'
+import { parseMemory } from '@skript-ide/agent/src/memory'
 import { PERMISSION_MODES } from '@skript-ide/agent/src/permission'
+import { AGENT_MODES } from '@skript-ide/agent/src/mode'
 import { changesDiffStat, type DiffStat } from '@skript-ide/agent/src/diff-stat'
 import { CODEX_PROVIDER_ID } from '@skript-ide/agent/src/codex-catalog'
+import { TpsMeter } from './tps-meter'
 import {
   imageDataUrl,
   IMAGE_MEDIA_TYPES,
@@ -121,6 +134,8 @@ interface MenuItem {
 
 /** `@` listesinde gösterilen en fazla dosya. */
 const MAX_MENTION_ITEMS = 50
+/** `@` listesinde dosyalardan önce önerilen en fazla konuşma (`@chat:` yazılmadıkça). */
+const MAX_CONVERSATION_SUGGESTIONS = 3
 
 export interface AgentPanelElements {
   panel: HTMLElement
@@ -128,6 +143,7 @@ export interface AgentPanelElements {
   modelSelect: HTMLSelectElement
   effortSelect: HTMLSelectElement
   permissionSelect: HTMLSelectElement
+  modeSelect: HTMLSelectElement
   newButton: HTMLButtonElement
   historyButton: HTMLButtonElement
   sessionsDialog: HTMLDialogElement
@@ -170,10 +186,14 @@ export class AgentPanel {
   private menuIndex = 0
   /** `@` listesi için proje dosyaları; her yeni `@` yazımında yenilenir. */
   private projectFiles: string[] = []
+  /** `@chat:` etiketi için kayıtlı konuşmalar; menü açılınca yenilenir. */
+  private savedSessions: AgentSessionInfo[] = []
   private filesRequest = 0
   /** Menü şu an bir `@` etiketini tamamlıyor; liste bu süre boyunca bir kez istenir. */
   private mentionActive = false
   private readonly usageEl = el('div', 'agent-usage')
+  /** Durum yazısının yanındaki üretim hızı (token/saniye). */
+  private readonly tps = new TpsMeter(el('span', 'agent-tps'))
   /** Agent'ın `update_todos` planı; sohbetin üstünde kompakt bir liste. */
   private readonly todoList = el('div', 'agent-todos')
   /** Bir sonraki mesajla gidecek görseller (yapıştırma, sürükleme ya da dosya seçimiyle eklenir). */
@@ -182,6 +202,15 @@ export class AgentPanel {
   private btwSeq = 0
   /** Açık `/btw` kutuları: soru kimliği → kutu ve yanıtın aktığı gövde. */
   private readonly btwBoxes = new Map<number, { box: HTMLElement; body: HTMLElement; streamed: boolean }>()
+  /** Turu arka planda süren diğer konuşmalar; geçmiş düğmesinde sayısı görünür. */
+  private readonly backgroundRuns = new Set<string>()
+  /** Açık konuşmanın alt agent'ları: `run_subagent` çağrı kimliği → son durum ve transkriptteki kartı. */
+  private readonly subagents = new Map<string, AgentSubagentInfo>()
+  private readonly subagentCards = new Map<string, HTMLElement>()
+  /** `/subagent` listelerindeki satırlar: alt agent'ın durumu değiştikçe kartlarla birlikte güncellenir. */
+  private readonly subagentRows = new Map<string, HTMLElement[]>()
+  /** Girişin asıl ipucu; alt agent konuşmasında yerine başka bir yazı gösterilir. */
+  private inputPlaceholder = ''
 
   constructor(
     private readonly ui: AgentPanelElements,
@@ -192,7 +221,13 @@ export class AgentPanel {
       if (this.running) void api.agentCancel()
       else this.submit()
     })
+    this.inputPlaceholder = ui.input.placeholder
     ui.status.before(this.usageEl)
+    ui.status.after(this.tps.element)
+    this.tps.element.title = l(
+      'Üretim hızı: akarken tahmini anlık değer, çağrı bitince kesin ortalama',
+      'Generation speed: live estimate while streaming, exact average once the call finishes'
+    )
     this.renderUsage(null)
     this.todoList.hidden = true
     ui.form.before(this.todoList)
@@ -242,6 +277,8 @@ export class AgentPanel {
     ui.effortSelect.addEventListener('change', () => void this.onQuickEffortChange())
     ui.permissionSelect.replaceChildren(...PERMISSION_MODES.map((mode) => new Option(permissionLabel(mode), mode)))
     ui.permissionSelect.addEventListener('change', () => void this.onQuickPermissionChange())
+    ui.modeSelect.replaceChildren(...AGENT_MODES.map((mode) => new Option(modeLabel(mode), mode)))
+    ui.modeSelect.addEventListener('change', () => void this.onModeChange())
     api.onAgentEvent((event) => this.handleEvent(event))
     void this.refreshState(true)
     // Hızlı seçiciler için katalog; indirilemezse yalnızca ayar penceresi çalışır
@@ -310,6 +347,7 @@ export class AgentPanel {
         if (!special && query && !option.text.toLowerCase().includes(query) && !option.value.toLowerCase().includes(query)) continue
         const item = el('button', special ? 'model-picker-item more' : 'model-picker-item', option.text)
         item.type = 'button'
+        item.title = option.text
         if (option.value === select.value) item.classList.add('selected')
         item.addEventListener('click', () => choose(option.value))
         list.append(item)
@@ -392,6 +430,27 @@ export class AgentPanel {
     permissionSelect.classList.toggle('warning', mode === 'never-ask')
   }
 
+  private async onModeChange(): Promise<void> {
+    try {
+      this.state = await api.agentSetAgentMode(this.ui.modeSelect.value as AgentMode)
+    } catch (error) {
+      this.renderNote((error as Error).message, 'error')
+    }
+    this.renderModeSelect()
+  }
+
+  /** Mod sistem istemini belirler; önbellek bozulmasın diye konuşma başlayınca kilitlenir. */
+  private renderModeSelect(): void {
+    const { modeSelect } = this.ui
+    const mode = this.state?.agentMode ?? 'standard'
+    const locked = (this.state?.messages.length ?? 0) > 0
+    modeSelect.value = mode
+    modeSelect.disabled = locked
+    modeSelect.title =
+      `${l('Agent modu', 'Agent mode')}: ${modeDescription(mode)}` +
+      (locked ? l('\nModu değiştirmek için yeni konuşma başlat.', '\nStart a new conversation to change the mode.') : '')
+  }
+
   private async saveSettings(next: AgentState['settings']): Promise<void> {
     const previous = this.state?.settings
     const hasHistory = (this.state?.messages.length ?? 0) > 0
@@ -416,6 +475,7 @@ export class AgentPanel {
 
   private renderQuickSelectors(): void {
     this.renderPermissionSelect()
+    this.renderModeSelect()
     const { modelSelect, effortSelect } = this.ui
     const settings = this.state?.settings
     const provider = this.providers?.find((p) => p.id === settings?.providerId)
@@ -459,16 +519,51 @@ export class AgentPanel {
   // --- Durum ---
 
   private async refreshState(rebuild = false): Promise<void> {
+    const previous = this.state
     this.state = await api.agentGetState()
+    if (previous && previous.sessionId !== this.state.sessionId) this.switchedFrom(previous)
+    if (rebuild) this.tps.clear()
     this.setRunning(this.state.running)
     this.renderTodos(this.state.todos)
     if (rebuild) {
       this.clearTranscript()
+      for (const info of this.state.subagents) this.subagents.set(info.callId, info)
+      if (this.state.parent) this.append(this.subagentBanner(this.state))
       for (const message of this.state.messages) this.renderMessage(message)
       if (this.state.messages.length === 0) this.renderEmpty()
+      if (this.state.running) this.resumeRun(this.state)
     }
     this.renderUsage(this.state.usage)
     this.renderModelButton()
+  }
+
+  /** Başka konuşmaya geçildi: eskisinin turu sürüyorsa arka planda sayılır, yenisi artık arka planda değil. */
+  private switchedFrom(previous: AgentState): void {
+    if (previous.sessionId && this.running) this.backgroundRuns.add(previous.sessionId)
+    if (this.state?.sessionId) this.backgroundRuns.delete(this.state.sessionId)
+    this.renderBackgroundRuns()
+  }
+
+  /** Turu süren konuşmaya dönüldü: akmakta olan yanıt, çalışan tool'lar ve bekleyen onaylar yeniden çizilir. */
+  private resumeRun(state: AgentState): void {
+    const answered = new Set(
+      state.messages.flatMap((message) => message.content.flatMap((block) => (block.type === 'tool_result' ? [block.callId] : [])))
+    )
+    for (const [id, row] of this.toolRows) if (!answered.has(id)) row.classList.add('running')
+    if (state.streaming?.reasoning) this.renderDelta('reasoning', state.streaming.reasoning)
+    if (state.streaming?.text) this.renderDelta('text', state.streaming.text)
+    for (const approval of state.approvals ?? []) this.renderApproval(approval.id, approval.request)
+  }
+
+  private renderBackgroundRuns(): void {
+    const count = this.backgroundRuns.size
+    const button = this.ui.historyButton
+    button.classList.toggle('has-background', count > 0)
+    button.dataset.count = count > 0 ? String(count) : ''
+    button.title =
+      count > 0
+        ? l(`Konuşma geçmişi · ${count} konuşma arka planda çalışıyor`, `Conversation history · ${count} running in the background`)
+        : l('Konuşma geçmişi', 'Conversation history')
   }
 
   private renderModelButton(): void {
@@ -498,7 +593,11 @@ export class AgentPanel {
    * isabet oranı, bağlam doluluğu ve maliyet. Konuşma geneli oran `/usage` dökümünde.
    */
   private renderUsage(usage: AgentUsage | null): void {
-    const u = usage ?? EMPTY_USAGE
+    this.usageEl.replaceChildren(...this.usageRows(usage ?? EMPTY_USAGE))
+  }
+
+  /** Sayaç satırları; alt agent kartı da aynısını kullanır. */
+  private usageRows(u: AgentUsage): HTMLElement[] {
     const cost = u.cost === null ? '–' : formatCost(u.cost)
     const stat = (label: string, value: string, title: string, kind: string) => {
       const node = el('span', `agent-usage-stat ${kind}`)
@@ -516,7 +615,7 @@ export class AgentPanel {
     const fill = u.contextWindow > 0 ? (u.contextTokens / u.contextWindow) * 100 : null
     const contextValue = fill === null ? '–' : `${fill.toFixed(0)}%/${formatCount(u.contextWindow)}`
     const contextKind = fill !== null && fill > 90 ? 'context danger' : fill !== null && fill > 70 ? 'context warn' : 'context'
-    this.usageEl.replaceChildren(
+    return [
       row(
         stat(l('Yeni', 'Uncached'), formatCount(u.uncached), l('Önbelleğe isabet etmeyen girdi token’ları', 'Input tokens that missed the cache'), 'uncached'),
         stat(l('Önbellek', 'Cached'), formatCount(u.cached), l('Önbellekten okunan girdi token’ları', 'Input tokens read from the cache'), 'cached'),
@@ -536,7 +635,133 @@ export class AgentPanel {
           'cost'
         )
       )
+    ]
+  }
+
+  // --- Alt agent'lar ---
+
+  /** Alt agent konuşması yalnızca izlenir: giriş kapalı, ana konuşmaya dönüş düğmesi bannerda. */
+  private renderSubagentMode(): void {
+    const readOnly = this.state?.parent != null
+    this.ui.input.disabled = readOnly
+    this.ui.input.placeholder = readOnly
+      ? l('Alt agent konuşması yalnızca izlenebilir.', 'Subagent conversations are read-only.')
+      : this.inputPlaceholder
+    this.ui.sendButton.disabled = readOnly && !this.running
+  }
+
+  private subagentBanner(state: AgentState): HTMLElement {
+    const banner = el('div', 'agent-subagent-banner')
+    const back = el('button', 'agent-subagent-open', l('← Ana konuşmaya dön', '← Back to main conversation'))
+    back.type = 'button'
+    const parentId = state.parent!.id
+    back.addEventListener('click', () => void this.openSession(parentId))
+    const model = state.subagentModel
+    const provider = model && this.providers?.find((p) => p.id === model.providerId)
+    const modelName = model ? (provider?.models.find((m) => m.id === model.modelId)?.name ?? model.modelId) : ''
+    banner.append(
+      el('span', 'agent-subagent-tag', l('Alt agent', 'Subagent')),
+      el('span', 'agent-subagent-title', state.parent!.title),
+      el('span', 'agent-muted', [modelName, model?.effort ? `effort ${model.effort}` : ''].filter(Boolean).join(' · ')),
+      back
     )
+    return banner
+  }
+
+  private async openSession(id: string): Promise<void> {
+    try {
+      await api.agentLoadSession(id)
+      await this.refreshState(true)
+    } catch (error) {
+      this.renderNote((error as Error).message, 'error')
+    }
+  }
+
+  /** `run_subagent` satırının altındaki kart: model, durum, kullanım ve oturumu açma düğmesi. */
+  private subagentCard(callId: string): HTMLElement {
+    const card = el('div', 'agent-subagent')
+    this.subagentCards.set(callId, card)
+    this.renderSubagentCard(callId)
+    return card
+  }
+
+  private renderSubagentCard(callId: string): void {
+    const card = this.subagentCards.get(callId)
+    if (!card) return
+    const info = this.subagents.get(callId)
+    // Alt agent başlamadan (model bulunamadı vb.) biten çağrının kartı yok
+    card.hidden = !info
+    if (!info) return
+    card.className = `agent-subagent ${info.status}`
+    const usage = el('div', 'agent-usage')
+    usage.append(...this.usageRows(info.usage))
+    card.replaceChildren(this.subagentHead(info), usage)
+  }
+
+  /** Alt agent kartının başlık satırı: durum, başlık, model ve oturumu açma düğmesi. */
+  private subagentHead(info: AgentSubagentInfo): HTMLElement {
+    const status = {
+      running: l('çalışıyor', 'running'),
+      done: l('bitti', 'done'),
+      error: l('hata', 'error'),
+      cancelled: l('durduruldu', 'stopped')
+    }[info.status]
+    const open = el('button', 'agent-subagent-open', l('Oturumu aç →', 'Open session →'))
+    open.type = 'button'
+    open.addEventListener('click', () => void this.openSession(info.sessionId))
+    const head = el('div', 'agent-subagent-head')
+    head.append(
+      el('span', 'agent-subagent-status', status),
+      el('span', 'agent-subagent-title', info.title),
+      el(
+        'span',
+        'agent-muted',
+        [info.modelName, info.effort ? `effort ${info.effort}` : '', l(`${info.toolCalls} tool`, `${info.toolCalls} tools`)]
+          .filter(Boolean)
+          .join(' · ')
+      ),
+      open
+    )
+    return head
+  }
+
+  private renderSubagentRow(row: HTMLElement, info: AgentSubagentInfo): void {
+    row.className = `agent-subagent ${info.status}`
+    row.replaceChildren(this.subagentHead(info))
+  }
+
+  /** `/subagent`: açık konuşmanın çalışan alt agent'larını (`all` ile hepsini) listeler. */
+  private listSubagents(arg: string): void {
+    const all = arg.toLowerCase() === 'all'
+    if (arg && !all) {
+      this.renderNote(l('Kullanım: /subagent [all]', 'Usage: /subagent [all]'))
+      return
+    }
+    const infos = [...this.subagents.values()]
+    const shown = all ? infos : infos.filter((info) => info.status === 'running')
+    const finished = infos.length - infos.filter((info) => info.status === 'running').length
+    if (shown.length === 0) {
+      const hint = !all && finished > 0 ? l(` Bitenler için /subagent all (${finished}).`, ` Use /subagent all for finished ones (${finished}).`) : ''
+      this.renderNote(
+        all ? l('Bu konuşmada alt agent yok.', 'No subagents in this conversation.') : l(`Çalışan alt agent yok.${hint}`, `No subagents are running.${hint}`)
+      )
+      return
+    }
+    const list = el('div', 'agent-subagent-list')
+    const title = all
+      ? l(`Alt agent'lar (${shown.length})`, `Subagents (${shown.length})`)
+      : l(`Çalışan alt agent'lar (${shown.length})`, `Running subagents (${shown.length})`)
+    list.append(el('div', 'agent-subagent-list-title', title))
+    for (const info of shown) {
+      const row = el('div')
+      this.subagentRows.set(info.callId, [...(this.subagentRows.get(info.callId) ?? []), row])
+      list.append(row)
+      this.renderSubagentRow(row, info)
+    }
+    if (!all && finished > 0) {
+      list.append(el('div', 'agent-muted', l(`${finished} biten alt agent için /subagent all.`, `/subagent all shows ${finished} finished.`)))
+    }
+    this.append(list)
   }
 
   /** Plan listesi: madde durumuna göre işaret; liste boşsa gizlenir. */
@@ -618,11 +843,14 @@ export class AgentPanel {
   }
 
   private setRunning(running: boolean): void {
+    if (running && !this.running) this.tps.start(this.state?.usage.output ?? null)
+    else if (!running) this.tps.stop()
     this.running = running
     this.ui.sendButton.textContent = running ? l('Durdur', 'Stop') : l('Gönder', 'Send')
     this.ui.sendButton.classList.toggle('stop', running)
     this.ui.status.textContent = running ? l('Çalışıyor…', 'Working…') : ''
     this.ui.panel.classList.toggle('running', running)
+    this.renderSubagentMode()
   }
 
   // --- Görseller ---
@@ -808,6 +1036,17 @@ export class AgentPanel {
         run: () => this.compact()
       },
       {
+        name: 'subagent',
+        aliases: ['subagents'],
+        args: '[all]',
+        description: l(
+          'Bu konuşmada çalışan alt agent’ları listeler; all ile bitenleri de gösterir',
+          'Lists the subagents running in this conversation; all also shows finished ones'
+        ),
+        whileRunning: true,
+        run: (arg) => this.listSubagents(arg)
+      },
+      {
         name: 'history',
         description: l('Konuşma geçmişini açar', 'Opens the conversation history'),
         run: () => this.openHistory()
@@ -883,18 +1122,38 @@ export class AgentPanel {
             }
           ]
         : []
+    // `@chat:` yazılınca yalnızca konuşmalar; aksi halde başlığı eşleşen birkaç konuşma dosyalardan önce
+    const chatOnly = !mention[1] && query.startsWith(CONVERSATION_MENTION_PREFIX)
+    const conversationItems: MenuItem[] = mention[1]
+      ? []
+      : rankSessions(
+          this.savedSessions.filter((session) => session.id !== this.state?.sessionId),
+          chatOnly ? query.slice(CONVERSATION_MENTION_PREFIX.length) : query,
+          chatOnly ? MAX_MENTION_ITEMS : MAX_CONVERSATION_SUGGESTIONS
+        ).map((session) => ({
+          label: `💬 ${session.title}`,
+          detail: [new Date(session.updatedAt).toLocaleDateString(), l(`${session.turns} mesaj`, `${session.turns} messages`)].join(' · '),
+          apply: () => insert(conversationMention(session.id))
+        }))
     this.showMenu([
       ...problemsItems,
-      ...rankFiles(this.projectFiles, mention[2]).map((path) => ({ label: path, apply: () => insert(formatMention(path)) }))
+      ...conversationItems,
+      ...(chatOnly
+        ? []
+        : rankFiles(this.projectFiles, mention[2]).map((path) => ({ label: path, apply: () => insert(formatMention(path)) })))
     ])
   }
 
-  /** Proje dosyalarını ana süreçten ister; yanıt geldiğinde menü hâlâ açıksa günceller. */
+  /** Proje dosyalarını ve kayıtlı konuşmaları ana süreçten ister; yanıt geldiğinde menü hâlâ açıksa günceller. */
   private async loadProjectFiles(): Promise<void> {
     const request = ++this.filesRequest
-    const files = await api.agentListFiles().catch(() => [])
+    const [files, sessions] = await Promise.all([
+      api.agentListFiles().catch(() => []),
+      api.agentListSessions().catch(() => [])
+    ])
     if (request !== this.filesRequest) return
     this.projectFiles = files
+    this.savedSessions = sessions
     if (document.activeElement === this.ui.input) this.updateMenu()
   }
 
@@ -1084,6 +1343,8 @@ export class AgentPanel {
 
   private async reset(): Promise<void> {
     await api.agentReset()
+    // Yeni konuşma kayıtlı varsayılan izin moduna ve son seçilen agent moduna döner
+    await this.refreshState()
     this.clearTranscript()
     this.renderTodos([])
     this.renderEmpty()
@@ -1128,14 +1389,22 @@ export class AgentPanel {
     const open = el('button', 'agent-session-open')
     const when = new Date(session.updatedAt).toLocaleString()
     const project = session.projectRoot ? session.projectRoot.split(/[\\/]/).filter(Boolean).at(-1) : null
+    const status =
+      session.status === 'approval'
+        ? el('span', 'agent-session-status approval', l('onay bekliyor', 'awaiting approval'))
+        : session.status === 'running'
+          ? el('span', 'agent-session-status', l('çalışıyor', 'running'))
+          : null
+    const title = el('span', 'agent-session-title', session.title)
+    if (status) title.prepend(status)
     open.append(
-      el('span', 'agent-session-title', session.title),
+      title,
       el('span', 'agent-muted', [when, l(`${session.turns} mesaj`, `${session.turns} messages`), project].filter(Boolean).join(' · '))
     )
     open.addEventListener('click', () => {
       void api.agentLoadSession(session.id).then(
-        (state) => {
-          this.state = state
+        () => {
+          // Durum yeniden okunur: eski konuşmanın turu sürüyorsa arka planda sayılsın
           void this.refreshState(true)
           dialog.close()
           this.ui.input.focus()
@@ -1149,6 +1418,8 @@ export class AgentPanel {
       void api.agentDeleteSession(session.id).then(async (state) => {
         const wasCurrent = session.id === this.state?.sessionId
         this.state = state
+        this.backgroundRuns.delete(session.id)
+        this.renderBackgroundRuns()
         if (wasCurrent) {
           this.clearTranscript()
           this.renderTodos([])
@@ -1164,13 +1435,20 @@ export class AgentPanel {
 
   // --- Olaylar ---
 
-  private handleEvent(event: AgentUiEvent): void {
+  private handleEvent(event: AgentEvent): void {
+    if (event.sessionId !== this.state?.sessionId) {
+      this.handleBackgroundEvent(event)
+      return
+    }
     switch (event.type) {
       case 'user-message':
         this.ui.transcript.querySelector('.agent-empty')?.remove()
+        // Konuşma başladı: mod artık bu konuşmaya bağlı
+        this.ui.modeSelect.disabled = true
         this.renderMessage(event.message)
         break
       case 'delta':
+        this.tps.delta(event.delta.text)
         this.renderDelta(event.delta.kind, event.delta.text)
         break
       case 'assistant-message':
@@ -1191,6 +1469,7 @@ export class AgentPanel {
         // `/usage` dökümü aynı nesneden okur; olay geldikçe tazelenmeli
         if (this.state) this.state.usage = event.usage
         this.renderUsage(event.usage)
+        this.tps.usage(event.usage.output)
         break
       case 'cache-miss':
         this.renderCacheMiss(event)
@@ -1229,6 +1508,11 @@ export class AgentPanel {
         if (this.state) this.state.todos = event.todos
         this.renderTodos(event.todos)
         break
+      case 'subagent':
+        this.subagents.set(event.info.callId, event.info)
+        this.renderSubagentCard(event.info.callId)
+        for (const row of this.subagentRows.get(event.info.callId) ?? []) this.renderSubagentRow(row, event.info)
+        break
       case 'done':
         this.finishLive()
         this.setRunning(false)
@@ -1250,12 +1534,42 @@ export class AgentPanel {
     }
   }
 
+  /**
+   * Panelde açık olmayan konuşmanın olayı: transkripte çizilmez. Dosya değişiklikleri yine de
+   * editöre yansır; onay isteği ve tur sonu kısa bir notla bildirilir.
+   */
+  private handleBackgroundEvent(event: AgentEvent): void {
+    if (event.type === 'file-changed') this.hooks.onFileChanged(event.path)
+    // Alt agent'ın ilerlemesi başlatan konuşmadaki kartında görünür; onayları da orada istenir
+    if (event.parentId) return
+    if (event.type === 'done') this.backgroundRuns.delete(event.sessionId)
+    else this.backgroundRuns.add(event.sessionId)
+    this.renderBackgroundRuns()
+    if (event.type !== 'approval-request' && event.type !== 'done') return
+    void api.agentListSessions().then(
+      (sessions) => {
+        const title = sessions.find((session) => session.id === event.sessionId)?.title ?? l('Arka plandaki konuşma', 'A background conversation')
+        if (event.type === 'approval-request') {
+          this.renderNote(l(`“${title}” onay bekliyor; geçmişten açıp yanıtla.`, `“${title}” is waiting for approval; open it from the history to respond.`), 'warning')
+        } else if (event.reason === 'error') {
+          this.renderNote(l(`“${title}” hatayla durdu: ${event.error ?? ''}`, `“${title}” stopped with an error: ${event.error ?? ''}`), 'error')
+        } else if (event.reason !== 'cancelled') {
+          this.renderNote(l(`“${title}” arka planda tamamlandı.`, `“${title}” finished in the background.`))
+        }
+      },
+      () => {}
+    )
+  }
+
   // --- Konuşma görünümü ---
 
   private clearTranscript(): void {
     for (const id of [...this.btwBoxes.keys()]) this.closeBtw(id)
     this.disposeApprovals()
     this.toolRows.clear()
+    this.subagents.clear()
+    this.subagentCards.clear()
+    this.subagentRows.clear()
     this.live = null
     this.ui.transcript.replaceChildren()
   }
@@ -1284,19 +1598,21 @@ export class AgentPanel {
       if (message.role === 'user' && block.type === 'text' && parseGoal(block.text) !== undefined) continue
       // Proje talimatları ve sıkıştırma özeti de yalnızca modele gider
       if (message.role === 'user' && block.type === 'text' && parseProjectInstructions(block.text) !== undefined) continue
+      if (message.role === 'user' && block.type === 'text' && parseMemory(block.text) !== undefined) continue
       if (message.role === 'user' && block.type === 'text' && isConversationSummary(block.text)) continue
       // Editör bağlamı da yalnızca modele gider
       if (message.role === 'user' && block.type === 'text' && isEditorContext(block.text)) continue
       if (thought.trim()) {
         this.append(this.reasoningBox(thought, false))
       } else if (attachment) {
-        this.append(this.attachmentChip(attachment.path, attachment.content))
+        this.append(this.attachmentChip(attachment.path, attachment.content, attachment.conversation?.title))
       } else if (block.type === 'text' && block.text.trim()) {
         this.append(message.role === 'user' ? this.userBubble(block.text) : this.assistantText(block.text))
       } else if (block.type === 'image') {
         this.append(this.imageBubble(block))
       } else if (block.type === 'tool_call') {
         this.append(this.toolRow(block))
+        if (block.name === 'run_subagent') this.append(this.subagentCard(block.id))
       } else if (block.type === 'tool_result') {
         this.renderToolResult(block)
       }
@@ -1380,16 +1696,18 @@ export class AgentPanel {
   }
 
   /** Mesaja eklenen dosya: kapalı bir kutu, açılınca modele giden içerik görünür. */
-  private attachmentChip(path: string, content: string): HTMLElement {
+  private attachmentChip(path: string, content: string, conversationTitle?: string): HTMLElement {
     const box = el('details', 'agent-attachment')
     const lines = content.split('\n').length
     box.append(
       el(
         'summary',
         undefined,
-        isProblemsMention(path)
-          ? `⚠ ${l('Problemler', 'Problems')} · ${content === 'No problems reported.' ? 0 : lines}`
-          : `📎 ${path} · ${l(`${lines} satır`, `${lines} lines`)}`
+        conversationTitle !== undefined
+          ? `💬 ${conversationTitle}`
+          : isProblemsMention(path)
+            ? `⚠ ${l('Problemler', 'Problems')} · ${content === 'No problems reported.' ? 0 : lines}`
+            : `📎 ${path} · ${l(`${lines} satır`, `${lines} lines`)}`
       ),
       el('pre', 'agent-tool-result', content.length > MAX_RESULT_PREVIEW ? `${content.slice(0, MAX_RESULT_PREVIEW)}\n…` : content)
     )
@@ -1889,6 +2207,37 @@ function permissionDescription(mode: PermissionMode): string {
   }
 }
 
+function modeLabel(mode: AgentMode): string {
+  switch (mode) {
+    case 'quick':
+      return l('Hızlı', 'Quick')
+    case 'standard':
+      return l('Standart', 'Standard')
+    case 'thorough':
+      return l('Kapsamlı', 'Thorough')
+  }
+}
+
+function modeDescription(mode: AgentMode): string {
+  switch (mode) {
+    case 'quick':
+      return l(
+        'İstenen küçük değişikliği en az adımla yapar; sunucu, test ve örnek araçları kapalı.',
+        'Makes the requested small change in as few steps as possible; server, test and example tools are off.'
+      )
+    case 'standard':
+      return l(
+        'Değişikliği yapar, gerektiğinde doğrular.',
+        'Makes the change and verifies it when needed.'
+      )
+    case 'thorough':
+      return l(
+        'Değişikliği sunucuda doğrular ve mümkünse test eder; özellik eklemez, daha çok kontrol eder.',
+        'Verifies the change on the server and tests it when possible; checks more, does not add more.'
+      )
+  }
+}
+
 function field(label: string, ...controls: HTMLElement[]): HTMLElement {
   const wrapper = el('label', 'agent-field')
   wrapper.append(el('span', 'agent-field-label', label), ...controls)
@@ -1951,6 +2300,24 @@ function rankFiles(files: string[], query: string): string[] {
     .map((item) => item.path)
 }
 
+/**
+ * `@` listesindeki konuşmalar: boş sorguda en yeniler, aksi halde başlığı ya da kimliği sorguyla başlayanlar
+ * önde, başlığında sorgu geçenler sonra; eşitlikte yeni olan önde.
+ */
+function rankSessions(sessions: AgentSessionInfo[], query: string, limit: number): AgentSessionInfo[] {
+  const q = query.toLowerCase()
+  const scored: { session: AgentSessionInfo; score: number }[] = []
+  for (const session of sessions) {
+    const title = session.title.toLowerCase()
+    const score = !q || title.startsWith(q) || session.id.startsWith(q) ? 0 : title.includes(q) ? 1 : -1
+    if (score >= 0) scored.push({ session, score })
+  }
+  return scored
+    .sort((a, b) => a.score - b.score || b.session.updatedAt - a.session.updatedAt)
+    .slice(0, limit)
+    .map((item) => item.session)
+}
+
 /** Sayaç ilk açılışta ve konuşma sıfırlanınca boş görünür. */
 const EMPTY_USAGE: AgentUsage = {
   uncached: 0,
@@ -1998,6 +2365,11 @@ function toolArgument(call: ToolCallBlock): string {
   const input = (call.input ?? {}) as Record<string, unknown>
   if (typeof input.path === 'string') return input.path
   if (typeof input.query === 'string') return `"${input.query}"`
+  // `run_subagent` başlığı
+  if (typeof input.description === 'string') return input.description
+  // `remember` / `forget` notu ve `read_conversation` kimliği
+  const note = input.text ?? input.match ?? input.id
+  if (typeof note === 'string') return note.length > 60 ? `${note.slice(0, 60)}…` : note
   if (call.name === 'list_dir') return '.'
   const json = JSON.stringify(call.input)
   return json.length > 60 ? `${json.slice(0, 60)}…` : json

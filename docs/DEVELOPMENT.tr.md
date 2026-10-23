@@ -144,6 +144,24 @@ doğrulanırsa tek tek ya da topluca uygulanabilir; aynı düzeltmeler editörde
 **Gerçek sunucuda doğrula**, projeyi hedef sürümün sunucusunda (seçili addon'larla) dener ve ardından
 eski sürüme döner.
 
+### Güncellemeler
+
+Kurulum dosyasıyla yüklenen uygulama, açılıştan kısa süre sonra ve dört saatte bir GitHub sürümlerini
+denetler (`electron-updater`). Yeni sürüm arka planda iner, durum çubuğunda **↻ Güncellemek için yeniden
+başlat** görünür; uygulama kapatılınca da kurulur. **Yardım → Güncellemeleri Denetle…** elle denetler,
+**Yardım → Otomatik Güncelle** otomatik denetimi ve indirmeyi kapatır (seçim `userData/settings.json`'da).
+Güncellemeden sonraki ilk açılışta **Yenilikler** penceresi o sürümün GitHub yayın notlarını gösterir;
+**Yardım → Yenilikler…** ile her zaman açılabilir. Geliştirme modunda (`npm run dev`) denetim yapılmaz.
+
+Yeni sürüm yayımlamak:
+
+1. `packages/desktop/package.json` (ve kökteki) `version` alanını artır.
+2. `GH_TOKEN` ortam değişkenine `repo` yetkili bir GitHub token'ı koy ve `npm run release -w @skript-ide/desktop`
+   çalıştır. Kurulum dosyası, `latest.yml` ve `.blockmap` `v<sürüm>` etiketli GitHub sürümüne yüklenir
+   (sürüm taslak olarak oluşur).
+3. GitHub'da sürümün açıklamasına yenilikleri yaz (Markdown) ve yayımla. Bu metin hem güncelleme
+   penceresinde hem **Yenilikler** penceresinde gösterilir.
+
 ## Yapı
 
 ```

@@ -38,6 +38,8 @@ Grab **`Skript-IDE-Setup-<version>.exe`** from the [latest release](https://gith
 - **Addon support** — SkBee and skript-reflect, with compatibility tested on a real server (✓ / ◐ / ✕) and checksum-verified downloads.
 - **Syntax Browser** — search every event, condition, effect, expression, section, structure, type and function of the selected version.
 - **Version Migration Assistant** — lists removed, changed and new syntax between two versions and applies known rewrites automatically.
+- **AI assistant** — a chat panel beside the editor that writes and fixes Skript code, checks it with the language server and the real server, and can run tests. Works with Anthropic, ChatGPT (Codex) and any OpenAI-compatible API. Pick a mode: **quick**, **standard** or **thorough**. Conversations are kept and can be referenced later, short memory notes are stored per user and per project (`.skript-ide/memory.md`), and larger jobs can be handed to a sub-agent.
+- **Automatic updates** — new releases are checked for in the background and can be installed from inside the app.
 - **Turkish & English UI** — chosen from the system language, switchable under **View → Language**.
 
 ### Supported versions
@@ -84,6 +86,8 @@ Requires Node.js 22+. Detailed architecture and developer notes (in Turkish): [d
 - **Addon desteği** — SkBee ve skript-reflect; uyumluluk gerçek sunucuda denendi (✓ / ◐ / ✕), indirmeler checksum ile doğrulanır.
 - **Syntax Tarayıcısı** — seçili sürümdeki tüm olay, koşul, efekt, ifade, bölüm, yapı, tür ve fonksiyonlarda arama.
 - **Sürüm Geçiş Asistanı** — iki sürüm arasında kaldırılan, değişen ve yeni syntax'ları listeler; bilinen yeniden yazımları otomatik uygular.
+- **Yapay zekâ asistanı** — editörün yanındaki sohbet panelinde Skript kodu yazılır ve düzeltilir; dil sunucusu ve gerçek sunucu ile denetlenir, testler çalıştırılabilir. Anthropic, ChatGPT (Codex) ve OpenAI uyumlu her API ile çalışır. **Hızlı**, **standart** ve **derinlemesine** modlar arasından seçim yapılır. Konuşmalar saklanıp sonradan başvurulabilir; kısa hafıza notları kullanıcı ve proje bazında tutulur (`.skript-ide/memory.md`), büyük işler bir alt agent'a devredilebilir.
+- **Otomatik güncelleme** — yeni sürümler arka planda denetlenir ve uygulama içinden kurulabilir.
 - **Türkçe ve İngilizce arayüz** — sistem diline göre seçilir, **Görünüm → Dil** menüsünden değiştirilebilir.
 
 ### Desteklenen sürümler
@@ -114,7 +118,8 @@ Node.js 22+ gerekir. Ayrıntılı mimari ve geliştirici notları: [docs/DEVELOP
 
 ```
 packages/
-├─ desktop/            Electron app (Monaco editor, panels, server lifecycle)
+├─ agent/              AI assistant: providers, tools, memory, conversations, sub-agents
+├─ desktop/            Electron app (Monaco editor, panels, server lifecycle, updater)
 ├─ language-server/    Editor-agnostic Skript LSP (Web Worker + Node/stdio)
 ├─ parser/             Error-tolerant, indentation-based Skript parser
 ├─ pattern-compiler/   Compiles & matches Skript syntax patterns

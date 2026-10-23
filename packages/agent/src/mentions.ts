@@ -6,6 +6,12 @@
 
 const ATTACHMENT = /^<attached_file path="([^"]*)">\n([\s\S]*)\n<\/attached_file>$/
 const PROBLEMS_ATTACHMENT = /^<attached_problems>\n([\s\S]*)\n<\/attached_problems>$/
+const CONVERSATION_ATTACHMENT = /^<attached_conversation id="([^"]*)" title="([^"]*)">\n([\s\S]*)\n<\/attached_conversation>$/
+
+/** Dosya yerine geçmiş bir konuşmayı etiketleyen önek: `@chat:3f2a9c1d` (kimliğin ilk karakterleri). */
+export const CONVERSATION_MENTION_PREFIX = 'chat:'
+/** Etikette yazılan kimlik uzunluğu. */
+export const CONVERSATION_REF_LENGTH = 8
 
 /** Dosya yerine PROBLEMLER sekmesini etiketleyen adlar (`@Problems`, `@Problemler`; büyük/küçük harf fark etmez). */
 export const PROBLEMS_MENTIONS = ['Problems', 'Problemler']
@@ -46,6 +52,18 @@ export function isProblemsMention(mention: string): boolean {
   return PROBLEMS_MENTIONS.some((alias) => alias.toLowerCase() === name)
 }
 
+/** Etiket geçmiş bir konuşmayı gösteriyorsa kimlik önekini, değilse `null` döndürür. */
+export function conversationMentionRef(mention: string): string | null {
+  if (!mention.toLowerCase().startsWith(CONVERSATION_MENTION_PREFIX)) return null
+  const ref = mention.slice(CONVERSATION_MENTION_PREFIX.length).toLowerCase()
+  return /^[0-9a-f-]{4,36}$/.test(ref) ? ref : null
+}
+
+/** Konuşmanın girişe yazılacak etiketi. */
+export function conversationMention(id: string): string {
+  return `@${CONVERSATION_MENTION_PREFIX}${id.slice(0, CONVERSATION_REF_LENGTH)}`
+}
+
 /** Yolu girişe yazılacak etiket biçimine çevirir; boşluk varsa tırnaklanır. */
 export function formatMention(path: string): string {
   return /\s/.test(path) ? `@"${path}"` : `@${path}`
@@ -67,10 +85,22 @@ export function problemsAttachmentText(problems: ProblemReport[]): string {
   return `<attached_problems>\n${lines.join('\n')}\n</attached_problems>`
 }
 
-/** Metin bloğu bir dosya eki (ya da sorun listesi) ise yolunu ve içeriğini döndürür; sorun listesinin yolu `Problems`. */
-export function parseAttachment(text: string): { path: string; content: string } | null {
+/** Etiketlenen geçmiş konuşmanın modele giden metni; `content` konuşmanın dökümü. */
+export function conversationAttachmentText(id: string, title: string, content: string): string {
+  return `<attached_conversation id="${id}" title="${title.replace(/["\n]/g, '')}">\n${content}\n</attached_conversation>`
+}
+
+/**
+ * Metin bloğu bir dosya eki, sorun listesi ya da konuşma eki ise yolunu ve içeriğini döndürür.
+ * Sorun listesinin yolu `Problems`; konuşma ekinin yolu etiketi (`chat:…`), kimliği ve başlığı `conversation`'da.
+ */
+export function parseAttachment(text: string): { path: string; content: string; conversation?: { id: string; title: string } } | null {
   const match = ATTACHMENT.exec(text)
   if (match) return { path: match[1], content: match[2] }
   const problems = PROBLEMS_ATTACHMENT.exec(text)
-  return problems ? { path: PROBLEMS_MENTIONS[0], content: problems[1] } : null
+  if (problems) return { path: PROBLEMS_MENTIONS[0], content: problems[1] }
+  const conversation = CONVERSATION_ATTACHMENT.exec(text)
+  if (!conversation) return null
+  const [, id, title, content] = conversation
+  return { path: conversationMention(id).slice(1), content, conversation: { id, title } }
 }

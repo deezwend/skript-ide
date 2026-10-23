@@ -5,6 +5,7 @@ import { IpcChannel, type ContextMenuItem } from '../shared/ipc'
 import { setupAgent } from './agent'
 import { initLocale, saveLocale } from './locale'
 import { buildAppMenu } from './menu'
+import { setupUpdater } from './updater'
 import { setupValidator } from './validator'
 import {
   allowPath,
@@ -221,8 +222,27 @@ function selectLocale(locale: Locale): void {
   app.quit()
 }
 
+/** Güncellemeyi kurmak için çıkmadan önce kaydedilmemiş değişiklikleri sorar. */
+function confirmQuitForUpdate(): boolean {
+  if (!hasUnsavedChanges || !mainWindow) return true
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'warning',
+    buttons: [l('Kaydetmeden Güncelle', 'Update Without Saving'), l('İptal', 'Cancel')],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Skript IDE',
+    message: l('Kaydedilmemiş değişiklikler var.', 'There are unsaved changes.'),
+    detail: l('Şimdi güncellersen bu değişiklikler kaybolacak.', 'If you update now, these changes will be lost.')
+  })
+  if (choice !== 0) return false
+  // Pencere kapanırken aynı soru bir daha sorulmasın
+  hasUnsavedChanges = false
+  return true
+}
+
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(buildAppMenu(selectLocale))
+  const updater = setupUpdater({ window: () => mainWindow, confirmQuit: confirmQuitForUpdate })
+  Menu.setApplicationMenu(buildAppMenu(selectLocale, updater))
   registerIpcHandlers()
   const server = setupValidator(() => mainWindow)
   setupAgent(() => mainWindow, server)

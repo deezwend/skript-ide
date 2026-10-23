@@ -1,7 +1,7 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { TextBlock } from './messages'
-import { attachmentText, isProblemsMention, parseMentions } from './mentions'
+import { attachmentText, conversationMentionRef, isProblemsMention, parseMentions } from './mentions'
 import { displayPath, IGNORED_DIRS, isInside } from './tools/core/paths'
 
 /** Etiket listesinde gösterilen en fazla dosya. */
@@ -43,10 +43,10 @@ export interface MentionAttachments {
 
 /**
  * Metindeki `@dosya` etiketlerini okur ve her biri için ek bloğu üretir.
- * Yalnızca proje içindeki, var olan metin dosyaları eklenir; `@Problems` dosya sayılmaz.
+ * Yalnızca proje içindeki, var olan metin dosyaları eklenir; `@Problems` ve `@chat:…` dosya sayılmaz.
  */
 export async function readMentions(projectRoot: string | null, text: string): Promise<MentionAttachments> {
-  const mentions = parseMentions(text).filter((mention) => !isProblemsMention(mention))
+  const mentions = parseMentions(text).filter((mention) => !isProblemsMention(mention) && conversationMentionRef(mention) === null)
   const result: MentionAttachments = { blocks: [], skipped: [] }
   if (mentions.length === 0) return result
   if (!projectRoot) return { blocks: [], skipped: mentions }

@@ -231,6 +231,7 @@ async function runToolCall(
     const changes: FileChange[] = []
     const callContext: ToolContext = {
       ...context,
+      callId: call.id,
       onFilesChanged: (changed) => {
         changes.push(...changed)
         context.onFilesChanged?.(changed)
