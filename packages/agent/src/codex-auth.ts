@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { ProviderError } from './provider'
+import { describeNetworkError, ProviderError } from './provider'
 
 /**
  * ChatGPT aboneliğiyle (Plus/Pro) giriş. Codex CLI'nin kullandığı OAuth istemcisi ve PKCE akışı
@@ -163,7 +163,7 @@ async function requestTokens(
     })
   } catch (error) {
     if (options.signal?.aborted) throw error
-    throw new ProviderError(`ChatGPT giriş sunucusuna bağlanılamadı: ${(error as Error).message}`)
+    throw new ProviderError(`ChatGPT giriş sunucusuna bağlanılamadı: ${describeNetworkError(error)}`, undefined, { retryable: true })
   }
 
   if (!response.ok) {

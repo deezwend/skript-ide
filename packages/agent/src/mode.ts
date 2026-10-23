@@ -25,6 +25,12 @@ const QUICK_EXCLUDED_TOOLS = new Set([
   'get_server_log',
   'search_examples',
   'get_migration_notes',
+  'dump_type_values',
+  'search_java_api',
+  'get_java_class',
+  'create_checkpoint',
+  'list_checkpoints',
+  'restore_checkpoint',
   'update_todos',
   'list_models',
   'run_subagent'

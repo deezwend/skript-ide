@@ -5,7 +5,7 @@
  */
 import { goalText, latestGoal } from './goal'
 import type { Message } from './messages'
-import type { ModelProvider, TokenUsage } from './provider'
+import { completeWithRetry, type ModelProvider, type TokenUsage } from './provider'
 
 const SUMMARY_PATTERN = /^<conversation_summary>\n([\s\S]*)\n<\/conversation_summary>$/
 
@@ -28,6 +28,8 @@ export interface CompactionOptions {
   keepRecent?: number
   /** Özetleme çağrısının token kullanımı; sağlayıcı bildirdiyse. */
   onUsage?: (usage: TokenUsage) => void
+  /** Geçici sağlayıcı hatalarında yeniden denemeler arasındaki beklemeler; varsayılan `DEFAULT_RETRY_DELAYS_MS`. */
+  retryDelaysMs?: readonly number[]
 }
 
 export interface CompactionResult {
@@ -61,12 +63,16 @@ export async function compactMessages(
   if (!transcript.trim()) return null
 
   const goal = latestGoal(messages)
-  const response = await provider.complete({
-    system: COMPACTION_SYSTEM,
-    messages: [{ role: 'user', content: [{ type: 'text', text: `${transcript}\n\n${COMPACTION_REQUEST}` }] }],
-    tools: [],
-    signal: options.signal
-  })
+  const response = await completeWithRetry(
+    provider,
+    {
+      system: COMPACTION_SYSTEM,
+      messages: [{ role: 'user', content: [{ type: 'text', text: `${transcript}\n\n${COMPACTION_REQUEST}` }] }],
+      tools: [],
+      signal: options.signal
+    },
+    { delaysMs: options.retryDelaysMs }
+  )
   if (response.usage) options.onUsage?.(response.usage)
   const summary = response.content
     .flatMap((block) => (block.type === 'text' ? [block.text] : []))

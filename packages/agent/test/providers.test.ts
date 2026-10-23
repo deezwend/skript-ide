@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type Anthropic from '@anthropic-ai/sdk'
 import { fromAnthropicContent, fromAnthropicUsage, toAnthropicMessages, toAnthropicParams } from '../src/providers/anthropic'
 import { fromChatUsage, OpenAICompatibleProvider, toChatMessages } from '../src/providers/openai-compatible'
-import { ProviderError, textMessage, type Message, type ModelRequest } from '../src/index'
+import { describeNetworkError, ProviderError, textMessage, type Message, type ModelRequest } from '../src/index'
 
 const conversation: Message[] = [
   textMessage('user', 'dosyayı oku'),
@@ -340,4 +340,49 @@ test('OpenAI uyumlu: usage önbellekli ve önbelleksiz girdiyi ayırır', () => 
     fromChatUsage({ prompt_tokens: 50, completion_tokens: 9, cached_tokens: 20, completion_tokens_details: { reasoning_tokens: 4 } }),
     { input: 30, cacheRead: 20, cacheWrite: 0, output: 9, reasoning: 4 }
   )
+})
+
+test('OpenAI uyumlu: yarıda kopan akış asıl nedeniyle, yeniden denenebilir ProviderError olur', async () => {
+  // undici akış koptuğunda yalnızca "terminated" der; neden `cause`'tadır
+  const socket = Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' })
+  const fakeFetch = (async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ya"}}]}\n\n'))
+        controller.error(new TypeError('terminated', { cause: socket }))
+      }
+    })
+    return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+  }) as unknown as typeof fetch
+  const provider = new OpenAICompatibleProvider({
+    providerId: 'openrouter',
+    apiKey: 'key',
+    baseURL: 'https://openrouter.ai/api/v1',
+    model: 'm',
+    maxTokens: 10,
+    fetch: fakeFetch
+  })
+  await assert.rejects(provider.complete(request()), (error: unknown) => {
+    assert.ok(error instanceof ProviderError)
+    assert.equal(error.retryable, true)
+    assert.equal(error.message, 'Sağlayıcının yanıtı okunamadı: terminated (other side closed, UND_ERR_SOCKET)')
+    return true
+  })
+})
+
+test('HTTP hatalarından yalnızca geçici olanlar yeniden denenebilir', () => {
+  assert.equal(new ProviderError('x', 400).retryable, false)
+  assert.equal(new ProviderError('x', 401).retryable, false)
+  assert.equal(new ProviderError('x', 429).retryable, true)
+  assert.equal(new ProviderError('x', 503).retryable, true)
+  assert.equal(new ProviderError('x').retryable, false)
+})
+
+test('describeNetworkError: iç içe ve AggregateError nedenlerini açar', () => {
+  const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:1234'), { code: 'ECONNREFUSED' })
+  assert.equal(
+    describeNetworkError(new TypeError('fetch failed', { cause: new AggregateError([refused]) })),
+    'fetch failed (connect ECONNREFUSED 127.0.0.1:1234)'
+  )
+  assert.equal(describeNetworkError(new Error('plain')), 'plain')
 })

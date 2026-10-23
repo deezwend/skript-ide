@@ -1,5 +1,6 @@
 import { imageDataUrl, type ContentBlock, type Message, type ProviderDataBlock } from '../messages'
 import {
+  describeNetworkError,
   ProviderError,
   type ModelProvider,
   type ModelRequest,
@@ -124,7 +125,7 @@ export class CodexProvider implements ModelProvider {
       })
     } catch (error) {
       if (request.signal.aborted) throw error
-      throw new ProviderError(`ChatGPT arka ucuna bağlanılamadı: ${(error as Error).message}`)
+      throw new ProviderError(`ChatGPT arka ucuna bağlanılamadı: ${describeNetworkError(error)}`, undefined, { retryable: true })
     }
 
     if (!response.ok) {
@@ -137,7 +138,7 @@ export class CodexProvider implements ModelProvider {
       return fromResponsesResult(await readResponsesStream(response.body, request.onDelta), providerId)
     } catch (error) {
       if (request.signal.aborted || error instanceof ProviderError) throw error
-      throw new ProviderError(`ChatGPT yanıtı okunamadı: ${(error as Error).message}`)
+      throw new ProviderError(`ChatGPT yanıtı okunamadı: ${describeNetworkError(error)}`, undefined, { retryable: true })
     }
   }
 }

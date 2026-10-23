@@ -60,11 +60,15 @@ export {
 export { ToolRegistry, validateInput, type ToolDefinition } from './registry'
 export {
   addUsage,
+  completeWithRetry,
+  DEFAULT_RETRY_DELAYS_MS,
+  describeNetworkError,
   emptyUsage,
   ProviderError,
   type ModelProvider,
   type ModelRequest,
   type ModelResponse,
+  type RetryInfo,
   type StreamDelta,
   type TokenUsage
 } from './provider'
@@ -187,8 +191,22 @@ export {
   writeFileTool
 } from './tools/core'
 export {
+  analyzePerformanceTool,
+  createCheckpointTool,
   createExampleTools,
+  createJavaApiTools,
   createSkriptTools,
+  dumpTypeValuesTool,
+  formatScript,
+  formatScriptTool,
+  inspectVariablesTool,
+  listCheckpointsTool,
+  listCommandsTool,
+  previewGuiTool,
+  previewText,
+  previewTextTool,
+  restoreCheckpointTool,
+  type TextFetcher,
   defaultExampleLoader,
   explainLineTool,
   findDefinitionTool,

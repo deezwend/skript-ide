@@ -981,6 +981,10 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
             conversation.measurementStale = true
             send(conversation, { type: 'context-compacted', summarizedMessages: event.summarizedMessages })
             void persistSession(conversation)
+          } else if (event.type === 'retry') {
+            // Yarım akan yanıt geçersiz; yeniden deneme baştan akar
+            conversation.streaming = null
+            send(conversation, event)
           } else if (event.type === 'delta') {
             const streaming = (conversation.streaming ??= { text: '', reasoning: '' })
             streaming[event.delta.kind] += event.delta.text
@@ -1151,6 +1155,9 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
               child.measurementStale = true
               send(child, { type: 'context-compacted', summarizedMessages: event.summarizedMessages })
             } else send(child, { type: 'context-trimmed', trimmed: event.trimmed })
+          } else if (event.type === 'retry') {
+            child.streaming = null
+            send(child, event)
           } else if (event.type === 'delta') {
             const streaming = (child.streaming ??= { text: '', reasoning: '' })
             streaming[event.delta.kind] += event.delta.text
@@ -1758,6 +1765,13 @@ function systemPrompt(
     '- The test server console is not a player: player-only events (on join, on break, ...) never fire and "!" effect commands are unavailable. Test such logic through a console-executable command in the script instead.',
     '- Before changing the project\'s Skript version, call get_migration_notes with the current and target versions to find removed or changed syntax.',
     '- Use get_project_info when the Skript version, addons or validation server state matter.',
+    '- Never guess Minecraft value names: lookup_minecraft_data gives the exact particle, enchantment, potion, biome, damage cause and other names for this Skript version; for items, blocks and entity types call dump_type_values once.',
+    '- Before adding or renaming global variables, and when a variable "is always empty", run inspect_variables: it maps where every variable is set and read and flags typos and unset variables. get_call_graph does the same for functions (undefined calls, wrong argument counts, unused functions), and list_commands for commands (duplicate names and aliases, clashes with vanilla or EssentialsX).',
+    '- When indentation errors appear, fix them with format_script instead of re-indenting by hand.',
+    '- Check message strings with preview_text (colors, tags, Skript quirks such as <red> being dark red) and inventory menus with preview_gui (slot grid and legend) instead of imagining how they look.',
+    '- When the user mentions lag or code runs in frequent events (move, every tick, physics), run analyze_performance.',
+    '- For skript-reflect or exact Java names, use search_java_api and get_java_class (Paper javadoc for the server\'s Minecraft version).',
+    '- Before a large refactor or migration, save a create_checkpoint; restore_checkpoint undoes it if the result is worse.',
     '- You may call several read-only tools in one response; they run in parallel. File changes and commands run one at a time, in the order you list them.',
     '- When run_subagent is available, you can hand self-contained work to subagents: broad searches or reviews that would flood your context, or independent tasks that can run in parallel (call it several times in one response). Give each a complete prompt, since it cannot see this conversation; pick a cheaper model or lower effort from list_models for simple work. Do not use subagents for small tasks you can do directly.',
     '- For multi-step work (3 or more steps) keep the plan with update_todos: put the whole list in one call, mark a step in_progress before starting it and completed as soon as it is done. Do not use it for simple one-step requests.',

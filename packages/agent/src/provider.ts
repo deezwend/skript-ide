@@ -70,14 +70,98 @@ export interface ModelProvider {
   complete(request: ModelRequest): Promise<ModelResponse>
 }
 
+/** Kısa süre sonra yeniden denenince geçebilecek HTTP durumları (zaman aşımı, sınır, sunucu hataları). */
+const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504, 529])
+
 /** Sağlayıcı API'sinden dönen hata; arayüz `message`'ı kullanıcıya gösterir. */
 export class ProviderError extends Error {
+  /** Aynı istek yeniden gönderilirse geçebilir (bağlantı kopması, aşırı yük…). */
+  readonly retryable: boolean
+
   constructor(
     message: string,
     /** HTTP durumu; ağ hatalarında yok. */
-    readonly status?: number
+    readonly status?: number,
+    options: { retryable?: boolean } = {}
   ) {
     super(message)
     this.name = 'ProviderError'
+    this.retryable = options.retryable ?? (status !== undefined && RETRYABLE_STATUSES.has(status))
   }
+}
+
+/**
+ * `fetch` hatasının mesajı ve asıl nedeni. Node'un `fetch`'i (undici) yalnızca "terminated" ya da
+ * "fetch failed" der; gerçek neden (`other side closed`, `ECONNRESET`, `UND_ERR_BODY_TIMEOUT`…) `cause`'tadır.
+ */
+export function describeNetworkError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  const detail = causeText((error as { cause?: unknown } | null)?.cause)
+  return detail && !message.includes(detail) ? `${message} (${detail})` : message
+}
+
+function causeText(cause: unknown, depth = 0): string | undefined {
+  if (cause === undefined || cause === null || depth > 3) return undefined
+  // Birden çok adres denendiğinde (IPv4/IPv6) neden bir AggregateError olur; mesajı boştur
+  if (cause instanceof AggregateError && cause.errors.length > 0) return causeText(cause.errors[0], depth + 1)
+  if (!(cause instanceof Error)) return String(cause)
+  const code = (cause as { code?: unknown }).code
+  const parts = [cause.message]
+  if (typeof code === 'string' && !cause.message.includes(code)) parts.push(code)
+  const nested = causeText((cause as { cause?: unknown }).cause, depth + 1)
+  if (nested && !cause.message.includes(nested)) parts.push(nested)
+  return parts.filter(Boolean).join(', ') || undefined
+}
+
+export interface RetryInfo {
+  /** Başarısız olan denemenin sırası (1'den başlar). */
+  attempt: number
+  /** Toplam deneme hakkı (ilk istek dahil). */
+  maxAttempts: number
+  /** Bir sonraki denemeden önceki bekleme. */
+  delayMs: number
+  error: ProviderError
+}
+
+/** Yeniden denemeler arasındaki varsayılan beklemeler; uzunluğu yeniden deneme sayısıdır. */
+export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 10_000]
+
+/**
+ * `provider.complete`'i geçici hatalarda (bağlantı kopması, 429/5xx) bekleyerek yeniden dener.
+ * Yanıtın bir kısmı akmış olabilir; `onRetry` arayüzün o yarım yanıtı silmesi için çağrılır.
+ * İptal beklemeyi de keser.
+ */
+export async function completeWithRetry(
+  provider: ModelProvider,
+  request: ModelRequest,
+  options: { delaysMs?: readonly number[]; onRetry?: (info: RetryInfo) => void } = {}
+): Promise<ModelResponse> {
+  const delays = options.delaysMs ?? DEFAULT_RETRY_DELAYS_MS
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await provider.complete(request)
+    } catch (error) {
+      if (request.signal.aborted || !(error instanceof ProviderError) || !error.retryable || attempt > delays.length) {
+        throw error
+      }
+      const delayMs = delays[attempt - 1]
+      options.onRetry?.({ attempt, maxAttempts: delays.length + 1, delayMs, error })
+      await sleep(delayMs, request.signal)
+    }
+  }
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }

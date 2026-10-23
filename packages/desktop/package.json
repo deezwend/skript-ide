@@ -2,7 +2,7 @@
   "name": "@skript-ide/desktop",
   "productName": "Skript IDE",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Minecraft Skript development environment",
   "author": "deezwend",
   "homepage": "https://github.com/deezwend/skript-ide",

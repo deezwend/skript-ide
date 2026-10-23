@@ -280,6 +280,8 @@ export type AgentUiEvent =
   | { type: 'assistant-message'; message: Message }
   /** Yanıt akarken gelen metin/düşünme parçası; yanıt bitince `assistant-message` ile tamamı gelir. */
   | { type: 'delta'; delta: StreamDelta }
+  /** Model çağrısı geçici bir hatayla kesildi; `delayMs` sonra yeniden denenecek, yarım yanıt silinmeli. */
+  | { type: 'retry'; attempt: number; maxAttempts: number; delayMs: number; error: string }
   | { type: 'tool-start'; call: ToolCallBlock }
   | { type: 'tool-result'; call: ToolCallBlock; result: ToolResultBlock }
   | { type: 'approval-request'; id: number; request: ApprovalRequest }

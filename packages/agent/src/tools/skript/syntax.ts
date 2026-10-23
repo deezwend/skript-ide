@@ -26,14 +26,14 @@ const DEFAULT_LIMIT = 15
 const MAX_LIMIT = 50
 const PATTERNS_IN_RESULT = 3
 
-interface ProjectSyntax {
+export interface ProjectSyntax {
   index: SyntaxIndex
   /** Seçili olup syntax verisi olmayan addon'lar. */
   missing: string[]
 }
 
 /** Projenin Skript sürümü ve addon'ları için birleşik arama dizinleri; anahtar sürüm + addon'lar. */
-function createSyntaxSource(loaders: SyntaxLoaders) {
+export function createSyntaxSource(loaders: SyntaxLoaders): (service: AgentLanguageService) => Promise<ProjectSyntax> {
   const cache = new Map<string, Promise<ProjectSyntax>>()
 
   async function build(service: AgentLanguageService): Promise<ProjectSyntax> {
@@ -186,8 +186,10 @@ interface DocsInput {
   id: string
 }
 
-export function createSyntaxTools(loaders: SyntaxLoaders): AgentTool[] {
-  const projectSyntax = createSyntaxSource(loaders)
+export function createSyntaxTools(
+  loaders: SyntaxLoaders,
+  projectSyntax: (service: AgentLanguageService) => Promise<ProjectSyntax> = createSyntaxSource(loaders)
+): AgentTool[] {
   const addonSyntax = createAddonSource(loaders)
 
   const searchSyntaxTool = defineTool<SearchInput>({

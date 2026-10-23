@@ -1,5 +1,5 @@
 import { imageDataUrl, type ContentBlock, type Message, type ReasoningBlock } from '../messages'
-import { ProviderError, type ModelProvider, type ModelRequest, type ModelResponse, type StreamDelta, type TokenUsage } from '../provider'
+import { describeNetworkError, ProviderError, type ModelProvider, type ModelRequest, type ModelResponse, type StreamDelta, type TokenUsage } from '../provider'
 
 export interface OpenAICompatibleProviderOptions {
   providerId: string
@@ -109,7 +109,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       })
     } catch (error) {
       if (request.signal.aborted) throw error
-      throw new ProviderError(`Sağlayıcıya bağlanılamadı: ${(error as Error).message}`)
+      throw new ProviderError(`Sağlayıcıya bağlanılamadı: ${describeNetworkError(error)}`, undefined, { retryable: true })
     }
 
     if (!response.ok) {
@@ -122,7 +122,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
       return fromChatCompletion(await readStream(response.body, request.onDelta), providerId)
     } catch (error) {
       if (request.signal.aborted || error instanceof ProviderError) throw error
-      throw new ProviderError(`Sağlayıcının yanıtı okunamadı: ${(error as Error).message}`)
+      // Akış yarıda koptu (sunucu/proxy zaman aşımı, ağ kesintisi); aynı istek yeniden gönderilebilir
+      throw new ProviderError(`Sağlayıcının yanıtı okunamadı: ${describeNetworkError(error)}`, undefined, { retryable: true })
     }
   }
 }

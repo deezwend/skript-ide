@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   defineTool,
+  ProviderError,
   runAgent,
   textMessage,
   ToolError,
@@ -438,4 +439,77 @@ test('always-ask modunda okuma çağrıları paralel çalışmaz', async () => {
     permissionMode: () => 'always-ask'
   })
   assert.equal(maxActive, 1)
+})
+
+test('geçici sağlayıcı hatası retry olayıyla yeniden denenir', async () => {
+  const provider = new FakeProvider([
+    () => {
+      throw new ProviderError('Sağlayıcının yanıtı okunamadı: terminated', undefined, { retryable: true })
+    },
+    reply('tamam')
+  ])
+  const events: AgentEvent[] = []
+  const result = await runAgent({
+    provider,
+    registry,
+    context: makeContext(),
+    system: '',
+    messages: [textMessage('user', 'x')],
+    retryDelaysMs: [0, 0],
+    onEvent: (event) => events.push(event)
+  })
+  assert.equal(result.reason, 'end')
+  assert.equal(provider.requests.length, 2)
+  assert.deepEqual(
+    events.find((event) => event.type === 'retry'),
+    { type: 'retry', attempt: 1, maxAttempts: 3, delayMs: 0, error: 'Sağlayıcının yanıtı okunamadı: terminated' }
+  )
+})
+
+test('yeniden deneme hakkı bitince ya da hata kalıcıysa hata fırlatılır', async () => {
+  const transient = () => {
+    throw new ProviderError('koptu', undefined, { retryable: true })
+  }
+  const exhausted = new FakeProvider([transient, transient, transient])
+  await assert.rejects(
+    runAgent({ provider: exhausted, registry, context: makeContext(), system: '', messages: [textMessage('user', 'x')], retryDelaysMs: [0, 0] }),
+    /koptu/
+  )
+  assert.equal(exhausted.requests.length, 3)
+
+  const permanent = new FakeProvider([
+    () => {
+      throw new ProviderError('API anahtarı geçersiz.', 401)
+    }
+  ])
+  await assert.rejects(
+    runAgent({ provider: permanent, registry, context: makeContext(), system: '', messages: [textMessage('user', 'x')], retryDelaysMs: [0, 0] }),
+    /API anahtarı/
+  )
+  assert.equal(permanent.requests.length, 1)
+})
+
+test('iptal yeniden deneme beklemesini keser', async () => {
+  const controller = new AbortController()
+  const provider = new FakeProvider([
+    () => {
+      throw new ProviderError('koptu', undefined, { retryable: true })
+    },
+    reply('ulaşılmamalı')
+  ])
+  await assert.rejects(
+    runAgent({
+      provider,
+      registry,
+      context: makeContext({ signal: controller.signal }),
+      system: '',
+      messages: [textMessage('user', 'x')],
+      retryDelaysMs: [60_000],
+      onEvent: (event) => {
+        if (event.type === 'retry') controller.abort()
+      }
+    }),
+    { name: 'AbortError' }
+  )
+  assert.equal(provider.requests.length, 1)
 })

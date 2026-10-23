@@ -3,7 +3,7 @@ import { changesDiffStat } from './diff-stat'
 import { trimToolResults, type ContextLimits } from './context'
 import { DEFAULT_PERMISSION_MODE, needsApproval, type PermissionMode } from './permission'
 import { toolCalls, type Message, type ToolCallBlock, type ToolResultBlock } from './messages'
-import type { ModelProvider, ModelResponse, StreamDelta, TokenUsage } from './provider'
+import { completeWithRetry, type ModelProvider, type ModelResponse, type StreamDelta, type TokenUsage } from './provider'
 import { validateInput, type ToolRegistry } from './registry'
 import { ToolError, type FileChange, type ToolContext } from './tool'
 import { estimateMessageTokens, estimateTextTokens, promptTokens } from './usage'
@@ -24,6 +24,11 @@ export type AgentEvent =
    * `summarizedMessages`: özete dönüşen mesaj sayısı (yeni geçmişteki özet mesajı hariç).
    */
   | { type: 'context-compacted'; messages: Message[]; summarizedMessages: number }
+  /**
+   * Model çağrısı geçici bir hatayla (bağlantı kopması, 429/5xx) başarısız oldu; `delayMs` sonra
+   * yeniden denenecek. O ana kadar akan `delta`'lar geçersizdir, yanıt baştan yeniden akar.
+   */
+  | { type: 'retry'; attempt: number; maxAttempts: number; delayMs: number; error: string }
   | { type: 'done'; reason: AgentStopReason }
 
 /** `context_full`: kısaltmaya rağmen geçmiş bağlam penceresine sığmıyor. */
@@ -48,6 +53,8 @@ export interface RunAgentOptions {
     /** İlk çağrıdan önceki bağlam boyu (önceki çağrının kesin kullanımından); yoksa tahmin edilir. */
     initialTokens?: number
   }
+  /** Geçici sağlayıcı hatalarında yeniden denemeler arasındaki beklemeler; varsayılan `DEFAULT_RETRY_DELAYS_MS`. */
+  retryDelaysMs?: readonly number[]
   onEvent?: (event: AgentEvent) => void
 }
 
@@ -107,7 +114,8 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
         try {
           const compacted = await compactMessages(provider, messages, {
             signal: context.signal,
-            onUsage: (usage) => onEvent?.({ type: 'usage', usage })
+            onUsage: (usage) => onEvent?.({ type: 'usage', usage }),
+            retryDelaysMs: options.retryDelaysMs
           })
           if (compacted) {
             messages.splice(0, messages.length, ...compacted.messages)
@@ -121,13 +129,21 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
       }
       if (contextTokens() > limits.window * 0.95) return finish('context_full')
     }
-    const response: ModelResponse = await provider.complete({
-      system,
-      messages,
-      tools,
-      signal: context.signal,
-      onDelta: onEvent ? (delta) => onEvent({ type: 'delta', delta }) : undefined
-    })
+    const response: ModelResponse = await completeWithRetry(
+      provider,
+      {
+        system,
+        messages,
+        tools,
+        signal: context.signal,
+        onDelta: onEvent ? (delta) => onEvent({ type: 'delta', delta }) : undefined
+      },
+      {
+        delaysMs: options.retryDelaysMs,
+        onRetry: ({ attempt, maxAttempts, delayMs, error }) =>
+          onEvent?.({ type: 'retry', attempt, maxAttempts, delayMs, error: error.message })
+      }
+    )
     if (response.usage) onEvent?.({ type: 'usage', usage: response.usage })
     context.signal.throwIfAborted()
 

@@ -1498,6 +1498,21 @@ export class AgentPanel {
         this.live = null
         this.renderMessage(event.message)
         break
+      case 'retry': {
+        // Yarım kalan yanıt atılır; yeniden deneme baştan akar
+        this.live?.root.remove()
+        this.live = null
+        const seconds = Math.round(event.delayMs / 1000)
+        const retry = `${event.attempt}/${event.maxAttempts - 1}`
+        this.renderNote(
+          l(
+            `${event.error} — ${seconds} sn sonra yeniden deneniyor (${retry}).`,
+            `${event.error} — retrying in ${seconds}s (${retry}).`
+          ),
+          'warning'
+        )
+        break
+      }
       case 'tool-start':
         this.toolRows.get(event.call.id)?.classList.add('running')
         break

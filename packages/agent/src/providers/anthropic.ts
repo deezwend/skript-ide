@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { ContentBlock, Message } from '../messages'
-import { ProviderError, type ModelProvider, type ModelRequest, type ModelResponse, type TokenUsage } from '../provider'
+import { describeNetworkError, ProviderError, type ModelProvider, type ModelRequest, type ModelResponse, type TokenUsage } from '../provider'
 
 type MessageParam = Anthropic.Beta.BetaMessageParam
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam
@@ -57,9 +57,11 @@ export class AnthropicProvider implements ModelProvider {
     } catch (error) {
       if (request.signal.aborted) throw error
       if (error instanceof Anthropic.APIError) {
-        throw new ProviderError(describeError(error), error.status ?? undefined)
+        // SDK HTTP hatalarını zaten kendisi yeniden deniyor; durumsuz olanlar bağlantı hatalarıdır
+        throw new ProviderError(describeError(error), error.status ?? undefined, { retryable: error.status == null })
       }
-      throw new ProviderError(error instanceof Error ? error.message : String(error))
+      // Akış yarıda kesildi; SDK bunu yeniden denemez
+      throw new ProviderError(describeNetworkError(error), undefined, { retryable: true })
     }
   }
 }
@@ -199,6 +201,6 @@ function describeError(error: InstanceType<typeof Anthropic.APIError>): string {
   if (error instanceof Anthropic.PermissionDeniedError) return 'Bu API anahtarının bu modele erişimi yok.'
   if (error instanceof Anthropic.NotFoundError) return 'Model bulunamadı.'
   if (error instanceof Anthropic.RateLimitError) return 'İstek sınırına ulaşıldı; biraz sonra yeniden deneyin.'
-  if (error instanceof Anthropic.APIConnectionError) return 'Sağlayıcıya bağlanılamadı.'
+  if (error instanceof Anthropic.APIConnectionError) return `Sağlayıcıya bağlanılamadı: ${describeNetworkError(error)}`
   return error.message
 }
