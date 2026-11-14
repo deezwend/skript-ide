@@ -4,6 +4,12 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   attachedConversationText,
+  BROWSER_INSTRUCTIONS,
+  createAddonResearchTools,
+  createWebTools,
+  WEB_INSTRUCTIONS,
+  BROWSER_TOOL_NAMES,
+  browserTools,
   conversationMentionRef,
   conversationTools,
   coreTools,
@@ -27,9 +33,16 @@ import {
   geometryTools,
   editorContextText,
   GOAL_INSTRUCTIONS,
+  ASK_USER_TOOL_NAMES,
+  askUserTools,
   goalUpdate,
   PROJECT_MEMORY_INSTRUCTIONS,
   SKRIPT_GUIDE,
+  SESSION_MESSAGE_INSTRUCTIONS,
+  SESSION_TOOL_NAMES,
+  sessionMessageText,
+  sessionTools,
+  shortId,
   SUBAGENT_TOOL_NAMES,
   subagentTools,
   todoTool,
@@ -55,6 +68,7 @@ import {
   parseMemory,
   parseMentions,
   parseProjectInstructions,
+  parseSessionMessage,
   problemsAttachmentText,
   projectMemoryUpdate,
   promptTokens,
@@ -72,6 +86,7 @@ import {
   toolCalls,
   type AgentMode,
   type ApprovalRequest,
+  type UserQuestion,
   type EditorContext,
   type FileChange,
   type ImageBlock,
@@ -79,16 +94,19 @@ import {
   type CatalogModel,
   type CatalogProvider,
   type CodexTokens,
+  type ContentBlock,
   type ConversationArchive,
   type Message,
   type PermissionMode,
   type PriceRates,
   type ProblemReport,
+  type SessionMessenger,
+  type SessionSendRequest,
   type SubagentModel,
   type SubagentRequest,
   type ToolContext,
   type TokenUsage,
-  type ToolResultBlock,
+  type TextBlock,
   type UsageCost
 } from '@skript-ide/agent'
 import { l } from '@skript-ide/i18n'
@@ -108,6 +126,7 @@ import {
   type ApiKeySource,
   type CodexAccount
 } from '../shared/ipc'
+import { AgentBrowser, setupBrowserIpc } from './browser'
 import { loginWithChatGPT } from './codex-login'
 import { getProjectState } from './project'
 
@@ -208,6 +227,27 @@ interface Conversation {
   selection: ModelSelection | null
   /** `run_subagent` çağrı kimliği → başlatılan alt agent. */
   subagents: Map<string, AgentSubagentInfo>
+  /** Diğer oturumlardan gelip henüz modele gitmemiş mesajlar. */
+  inbox: InboxEntry[]
+  /** Bu turda modele giden, yanıtı beklenen mesajların göndericileri; tur bitince son mesaj onlara döner. */
+  replyWaiters: ((outcome: TurnOutcome) => void)[]
+  /** Kullanıcı yazmadan, gelen mesajlarla art arda başlayan tur sayısı; sınırı oturumların birbirini sonsuza dek uyandırmasını önler. */
+  autoTurns: number
+  /** `send_to_session` ile yanıtını beklediği oturum; karşılıklı beklemeyi önlemek için. */
+  waitingFor: string | null
+}
+
+/** Başka bir oturumdan gelen mesaj; `reply` varsa gönderen yanıtı bekliyor. */
+interface InboxEntry {
+  block: TextBlock
+  reply?: (outcome: TurnOutcome) => void
+}
+
+/** Bir turun sonu: son asistan metni ve neden bittiği. */
+interface TurnOutcome {
+  text: string
+  reason: string
+  error?: string
 }
 
 function newConversation(permissionMode: PermissionMode, agentMode: AgentMode): Conversation {
@@ -227,7 +267,11 @@ function newConversation(permissionMode: PermissionMode, agentMode: AgentMode): 
     agentMode,
     parent: null,
     selection: null,
-    subagents: new Map()
+    subagents: new Map(),
+    inbox: [],
+    replyWaiters: [],
+    autoTurns: 0,
+    waitingFor: null
   }
 }
 
@@ -235,6 +279,8 @@ const sessionsDir = () => join(app.getPath('userData'), 'agent-sessions')
 const sessionPath = (id: string) => join(sessionsDir(), `${id}.json`)
 const SESSION_ID = /^[0-9a-f-]{36}$/
 const MAX_TITLE = 60
+/** Bir oturumun kullanıcı yazmadan, gelen mesajlarla art arda çalışabileceği tur sayısı. */
+const MAX_AUTO_TURNS = 3
 
 /** Kullanıcı hafızası: tüm projelerde geçerli agent notları. */
 const userMemoryPath = () => join(app.getPath('userData'), 'agent-memory.md')
@@ -246,15 +292,23 @@ const catalogPath = () => join(app.getPath('userData'), 'agent-catalog.json')
  * Arayüz mesaj gönderir, olayları `agent:event` kanalından izler, yazma işlemlerini onaylar.
  */
 export function setupAgent(getWindow: () => BrowserWindow | null, server: SkriptServer): void {
-  const tools = [...coreTools, ...createSkriptTools(), ...geometryTools, todoTool, ...memoryTools, ...conversationTools, ...subagentTools]
+  const tools = [...coreTools, ...createSkriptTools(), ...geometryTools, todoTool, ...askUserTools, ...memoryTools, ...conversationTools, ...subagentTools, ...sessionTools, ...browserTools, ...createWebTools(), ...createAddonResearchTools()]
   const registries: Record<AgentMode, ToolRegistry> = {
     quick: new ToolRegistry(tools.filter((tool) => toolAllowedInMode('quick', tool.name))),
     standard: new ToolRegistry(tools),
     thorough: new ToolRegistry(tools)
   }
-  // Alt agent iç içe alt agent açamaz
+  // Alt agent iç içe alt agent açamaz, diğer oturumlara yazamaz, kullanıcıya soru soramaz: yalnızca ana agent'a rapor verir
   const subagentRegistry = (mode: AgentMode) =>
-    new ToolRegistry(registries[mode].list().filter((tool) => !SUBAGENT_TOOL_NAMES.includes(tool.name)))
+    new ToolRegistry(
+      registries[mode]
+        .list()
+        .filter(
+          (tool) =>
+            !SUBAGENT_TOOL_NAMES.includes(tool.name) && !SESSION_TOOL_NAMES.includes(tool.name) && !ASK_USER_TOOL_NAMES.includes(tool.name) &&
+            !BROWSER_TOOL_NAMES.includes(tool.name)
+        )
+    )
   const subagentRegistries: Record<AgentMode, ToolRegistry> = {
     quick: subagentRegistry('quick'),
     standard: subagentRegistry('standard'),
@@ -262,6 +316,10 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
   }
   // Arayüzdeki dil sunucusu worker'ından ayrı bir örnek: agent dosyaları diskten okur, editörün
   // kaydedilmemiş belgeleriyle karışmaz. Sürüm ve addon'lar her mesajda projeye göre ayarlanır.
+  // Uygulama içi sekmeli tarayıcı (tek, tüm konuşmalarca paylaşılır); kalıcı oturumu sayesinde kullanıcı hesaplarına bir kez giriş yapar
+  const browser = new AgentBrowser(getWindow)
+  setupBrowserIpc(browser)
+  app.on('before-quit', () => browser.dispose())
   const languageService = new SkriptLanguageService({ loadDatabase: loadSyntaxDatabase })
   let stored: StoredAgentFile = { providerId: null, modelId: null, effort: null, permissionMode: DEFAULT_PERMISSION_MODE, keys: {} }
   let catalog: CatalogCache | null = null
@@ -277,6 +335,12 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
   let codexLogin: AbortController | null = null
   let nextApprovalId = 1
   const pendingApprovals = new Map<number, { conversation: Conversation; request: ApprovalRequest; done: (approved: boolean) => void }>()
+  /** `ask_user_question` soruları; cevap `null` ise kullanıcı kapattı ya da tur iptal edildi. */
+  let nextQuestionId = 1
+  const pendingQuestions = new Map<
+    number,
+    { conversation: Conversation; questions: UserQuestion[]; done: (answers: string[][] | null) => void }
+  >()
 
   /** Olay hangi konuşmanınsa onun kimliğiyle gider; panel yalnızca açık konuşmanınkini çizer. */
   const send = (conversation: Conversation, event: AgentUiEvent) => {
@@ -396,10 +460,33 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
         const info: AgentSessionInfo = { id, title, updatedAt, projectRoot, turns }
         const conversation = conversations.get(info.id)
         if (!conversation?.controller) return info
-        const awaiting = [...pendingApprovals.values()].some((entry) => entry.conversation === conversation)
+        const awaiting =
+          [...pendingApprovals.values()].some((entry) => entry.conversation === conversation) ||
+          [...pendingQuestions.values()].some((entry) => entry.conversation === conversation)
         return { ...info, status: awaiting ? 'approval' : 'running' }
       })
       .sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  /** Diskteki kaydın bellek kopyası; bellekte zaten varsa onu kullan. */
+  function restoreConversation(found: StoredSession): Conversation {
+    const calls = found.calls ?? []
+    return {
+      ...newConversation(stored.permissionMode, found.mode ?? DEFAULT_AGENT_MODE),
+      id: found.id,
+      saved: { title: found.title, projectRoot: found.projectRoot },
+      messages: closeDanglingToolCalls(found.messages),
+      goal: found.goal ?? null,
+      calls,
+      // Çağrı kaydı olan konuşmada toplam yeniden hesaplanır; eski kayıtta toplam tek başına durur
+      legacyUsage: calls.length > 0 ? undefined : (found.usage ?? newUsage()),
+      parent: found.parent ?? null,
+      selection: found.selection ?? null,
+      // Bellekte olmayan konuşmanın alt agent'ları çalışıyor olamaz (uygulama kapanmış olmalı)
+      subagents: new Map(
+        (found.subagents ?? []).map((info) => [info.callId, info.status === 'running' ? { ...info, status: 'cancelled' as const } : info])
+      )
+    }
   }
 
   /** Agent'ın geçmiş konuşmalara erişimi; konuşmanın kendisi listede yer almaz. */
@@ -660,6 +747,9 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
       approvals: [...pendingApprovals]
         .filter(([, entry]) => entry.conversation === conversation)
         .map(([id, entry]) => ({ id, request: entry.request })),
+      questions: [...pendingQuestions]
+        .filter(([, entry]) => entry.conversation === conversation)
+        .map(([id, entry]) => ({ id, questions: entry.questions })),
       keySource: await keySource(stored.providerId),
       configuredProviders: configuredProviders(),
       encryptionAvailable: safeStorage.isEncryptionAvailable(),
@@ -804,6 +894,21 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     })
   }
 
+  function askUser(conversation: Conversation, questions: readonly UserQuestion[], signal: AbortSignal): Promise<string[][] | null> {
+    if (signal.aborted) return Promise.resolve(null)
+    const id = nextQuestionId++
+    const list = questions.map((question) => ({ ...question, options: question.options.map((option) => ({ ...option })) }))
+    return new Promise((resolvePromise) => {
+      const done = (answers: string[][] | null) => {
+        pendingQuestions.delete(id)
+        resolvePromise(answers)
+      }
+      pendingQuestions.set(id, { conversation, questions: list, done })
+      signal.addEventListener('abort', () => done(null), { once: true })
+      send(conversation, { type: 'question-request', id, questions: list })
+    })
+  }
+
   /** Seçili model ve kimlik bilgisi; eksikse kullanıcıya gösterilecek hatayı fırlatır. */
   async function connect(
     providerId?: string,
@@ -843,8 +948,8 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     const conversation = active
     if (conversation.parent) throw new Error(READ_ONLY_SUBAGENT())
     if (conversation.controller) throw new Error(l('Agent zaten çalışıyor.', 'The agent is already running.'))
-    const { provider, model, apiKey, subscription } = await connect()
-    const effort = stored.effort
+    const connection = await connect()
+    const { model } = connection
     if (images.length && model.images === false) {
       throw new Error(
         l(
@@ -874,46 +979,76 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
         // Model etiketi görür; isterse search_conversations ile arar
       }
     }
-    // Hedef sistem istemine değil, değiştiği ilk mesaja eklenir; geçmiş yalnızca büyür, önbellek korunur
-    const goalBlock = goalUpdate(conversation.messages, conversation.goal)
-    if (goalBlock) attachments.push({ type: 'text', text: goalBlock })
-    // Proje talimatları da aynı desenle yalnızca değiştiğinde mesaja eklenir
-    const memoryBlock = projectMemoryUpdate(conversation.messages, await loadProjectMemory(project.root))
-    if (memoryBlock) attachments.push({ type: 'text', text: memoryBlock })
-    // Agent hafızası (kullanıcı + proje) da yalnızca değiştiğinde eklenir
-    const agentMemoryBlock = memoryUpdate(conversation.messages, await loadMemory(userMemoryPath(), project.root))
-    if (agentMemoryBlock) attachments.push({ type: 'text', text: agentMemoryBlock })
+    attachments.push(...(await contextUpdates(conversation, project.root)))
     if (editor) {
       const path = editor.untitled ? editor.path : projectPath(project.root, editor.path)
       attachments.push({ type: 'text', text: editorContextText({ ...editor, path }) })
     }
-    const userMessage: Message = { role: 'user', content: [...textMessage('user', text).content, ...images, ...attachments] }
     if (conversation.controller) throw new Error(l('Agent zaten çalışıyor.', 'The agent is already running.'))
+    // Kullanıcı yazdı: oturumlar bu konuşmayı yeniden uyandırabilir; sınır yüzünden bekleyen mesajlar da bu mesajla gider
+    conversation.autoTurns = 0
+    const userMessage: Message = {
+      role: 'user',
+      content: [...textMessage('user', text).content, ...images, ...attachments, ...drainInbox(conversation)]
+    }
+    conversation.saved ??= { title: titleFrom(text || l('Görsel', 'Image')), projectRoot: project.root }
+    await runTurn(conversation, userMessage, connection, new AbortController())
+  }
+
+  /** Hedef, proje talimatları ve agent hafızası: yalnızca geçmişte bildirilenden farklıysa yeni mesaja eklenir. */
+  async function contextUpdates(conversation: Conversation, root: string | null): Promise<TextBlock[]> {
+    const blocks: TextBlock[] = []
+    // Hedef sistem istemine değil, değiştiği ilk mesaja eklenir; geçmiş yalnızca büyür, önbellek korunur
+    const goalBlock = goalUpdate(conversation.messages, conversation.goal)
+    if (goalBlock) blocks.push({ type: 'text', text: goalBlock })
+    // Proje talimatları da aynı desenle yalnızca değiştiğinde mesaja eklenir
+    const memoryBlock = projectMemoryUpdate(conversation.messages, await loadProjectMemory(root))
+    if (memoryBlock) blocks.push({ type: 'text', text: memoryBlock })
+    // Agent hafızası (kullanıcı + proje) da yalnızca değiştiğinde eklenir
+    const agentMemoryBlock = memoryUpdate(conversation.messages, await loadMemory(userMemoryPath(), root))
+    if (agentMemoryBlock) blocks.push({ type: 'text', text: agentMemoryBlock })
+    return blocks
+  }
+
+  /**
+   * Kullanıcı mesajıyla ya da gelen oturum mesajlarıyla bir tur çalıştırır. `controller` konuşmaya
+   * önceden bağlanmış olabilir: uyandırma, bağlanırken ikinci bir turun başlamasını böyle önler.
+   */
+  async function runTurn(
+    conversation: Conversation,
+    userMessage: Message,
+    connection: Awaited<ReturnType<typeof connect>>,
+    controller: AbortController
+  ): Promise<TurnOutcome> {
+    const { provider, model, apiKey, subscription } = connection
+    const effort = stored.effort
+    const project = getProjectState()
     const checkpoint: Checkpoint = { baseLength: conversation.messages.length, files: new Map() }
     conversation.checkpoints.push(checkpoint)
     const history = [...conversation.messages, userMessage]
     conversation.messages = history
-    conversation.saved ??= { title: titleFrom(text || l('Görsel', 'Image')), projectRoot: project.root }
+    conversations.set(conversation.id, conversation)
     void persistSession(conversation)
     send(conversation, { type: 'user-message', message: userMessage })
 
-    // Önceki çağrının kesin kullanımına dayanır; tur başlayınca (controller varken) hesap değişir
+    // Önceki çağrının kesin kullanımına dayanır; tur sürerken (controller varken) hesap değişir
+    conversation.controller = null
     const initialTokens = conversation.calls.length ? contextTokens(conversation) : undefined
     const contextWindow = model.contextWindow ?? 0
-    const controller = new AbortController()
     conversation.controller = controller
     const signal = controller.signal
     // Bu turun numarası: çağrılar buna göre gruplanır, `/undo` geri alırken bununla kırpar
     let turn = countTurns(history)
     // Hata ya da iptalde de konuşmanın tutarlı kalması için olaylardan izlenen geçmiş
     const tracked = [...history]
-    let pendingResults: ToolResultBlock[] = []
+    let pendingResults: ContentBlock[] = []
     const flushResults = () => {
       if (pendingResults.length) tracked.push({ role: 'user', content: pendingResults })
       pendingResults = []
     }
     conversation.liveHistory = () => (pendingResults.length ? [...tracked, { role: 'user', content: [...pendingResults] }] : [...tracked])
 
+    let outcome: TurnOutcome
     try {
       const result = await runAgent({
         provider: createProvider(provider, model, {
@@ -927,12 +1062,15 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
         system: systemPrompt(project.root, project.settings.skriptVersion, project.settings.addons ?? [], conversation.agentMode),
         messages: history,
         contextLimits: { window: contextWindow, initialTokens },
+        inbox: () => drainInbox(conversation),
         context: {
           projectRoot: project.root,
           signal,
           languageService,
           server,
+          browser,
           requestApproval: (request) => requestApproval(conversation, request, signal),
+          askUser: (questions) => askUser(conversation, questions, signal),
           onFilesChanged: (changes) => recordChanges(conversation, checkpoint, project.root, changes),
           onTodosChanged: (todos) => send(conversation, { type: 'todos', todos: [...todos] }),
           userMemoryFile: userMemoryPath(),
@@ -940,7 +1078,8 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
           subagents: {
             models: () => subagentModels(provider.id, model.id),
             run: (request, ctx) => runSubagent(conversation, { providerId: provider.id, modelId: model.id, effort }, request, ctx)
-          }
+          },
+          sessions: messengerFor(conversation)
         },
         onEvent: (event) => {
           if (event.type === 'assistant-message') {
@@ -994,25 +1133,191 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
           } else if (event.type === 'tool-result') {
             pendingResults.push(event.result)
             send(conversation, event)
+          } else if (event.type === 'inbox') {
+            // Tool sonuçlarıyla aynı kullanıcı mesajına eklendi; panel gelen mesajı çizsin
+            pendingResults.push(...event.blocks)
+            send(conversation, { type: 'user-message', message: { role: 'user', content: event.blocks } })
           }
         }
       })
       conversation.messages = result.messages
       send(conversation, { type: 'done', reason: result.reason })
+      outcome = { text: finalText(result.messages), reason: result.reason }
     } catch (error) {
       flushResults()
       conversation.messages = closeDanglingToolCalls(tracked)
-      if (signal.aborted) send(conversation, { type: 'done', reason: 'cancelled' })
-      else send(conversation, { type: 'done', reason: 'error', error: (error as Error).message })
+      if (signal.aborted) {
+        send(conversation, { type: 'done', reason: 'cancelled' })
+        outcome = { text: finalText(conversation.messages), reason: 'cancelled' }
+      } else {
+        send(conversation, { type: 'done', reason: 'error', error: (error as Error).message })
+        outcome = { text: finalText(conversation.messages), reason: 'error', error: (error as Error).message }
+      }
     } finally {
       conversation.controller = null
       conversation.liveHistory = null
       conversation.streaming = null
       for (const [id, entry] of pendingApprovals) if (entry.conversation === conversation) pendingApprovals.delete(id)
+      for (const [id, entry] of pendingQuestions) if (entry.conversation === conversation) pendingQuestions.delete(id)
       // Arka planda biten konuşma diskte kalır, bellekten çıkar
       if (conversation !== active) conversations.delete(conversation.id)
       void persistSession(conversation)
     }
+    for (const reply of conversation.replyWaiters.splice(0)) reply(outcome)
+    // Model son yanıtını verdikten sonra gelen mesajlar yeni bir turla işlenir
+    if (conversation.inbox.length) void wake(conversation)
+    return outcome
+  }
+
+  // --- Oturumlar arası mesajlar ---
+
+  /** Bekleyen mesajları modele gidecek bloklara çevirir; yanıt bekleyen gönderenler turun sonunda yanıtlanır. */
+  function drainInbox(conversation: Conversation): ContentBlock[] {
+    const entries = conversation.inbox.splice(0)
+    for (const entry of entries) if (entry.reply) conversation.replyWaiters.push(entry.reply)
+    return entries.map((entry) => entry.block)
+  }
+
+  /** Bekleyen mesajları yanıtsız bırakır (oturum silindi, bağlanılamadı…); bekleyen gönderenlere nedeni döner. */
+  function failInbox(conversation: Conversation, error: string): void {
+    for (const reply of conversation.replyWaiters.splice(0)) reply({ text: '', reason: 'error', error })
+    for (const entry of conversation.inbox) entry.reply?.({ text: '', reason: 'error', error })
+    conversation.inbox = []
+  }
+
+  /** Boştaki oturumu gelen mesajlarla yeni bir tura başlatır; tur sürüyorsa mesajlar zaten bir sonraki adımda okunur. */
+  async function wake(conversation: Conversation): Promise<void> {
+    if (conversation.controller || conversation.inbox.length === 0 || conversation.saved === null) return
+    if (conversation.autoTurns >= MAX_AUTO_TURNS) {
+      // Mesajlar kuyrukta kalır, kullanıcının bir sonraki mesajıyla gider; yanıt bekleyen gönderen boşuna beklemesin
+      for (const entry of conversation.inbox) {
+        entry.reply?.({ text: '', reason: 'queued' })
+        delete entry.reply
+      }
+      return
+    }
+    // Bağlanırken ikinci bir tur (kullanıcının ya da başka bir mesajın) başlamasın
+    const controller = new AbortController()
+    conversation.controller = controller
+    conversations.set(conversation.id, conversation)
+    let connection: Awaited<ReturnType<typeof connect>>
+    let updates: TextBlock[]
+    try {
+      await loaded
+      connection = await connect()
+      const project = getProjectState()
+      await languageService.setSkriptVersion(project.settings.skriptVersion)
+      languageService.setAddons(project.settings.addons ?? [])
+      updates = await contextUpdates(conversation, project.root)
+    } catch (error) {
+      conversation.controller = null
+      if (conversation !== active) conversations.delete(conversation.id)
+      failInbox(conversation, (error as Error).message)
+      return
+    }
+    conversation.autoTurns++
+    const userMessage: Message = { role: 'user', content: [...drainInbox(conversation), ...updates] }
+    await runTurn(conversation, userMessage, connection, controller)
+  }
+
+  /** Bellekteki konuşma ya da disktekinin bellek kopyası; ikincisi ancak uyandırılınca belleğe girer. */
+  async function conversationById(id: string): Promise<Conversation | null> {
+    const inMemory = conversations.get(id)
+    if (inMemory) return inMemory
+    const found = await readSession(id)
+    return found && restoreConversation(found)
+  }
+
+  function messengerFor(sender: Conversation): SessionMessenger {
+    return {
+      list: async () =>
+        (await listSessions())
+          .filter((info) => info.id !== sender.id)
+          .map((info) => ({ ...info, status: info.status ?? 'idle', queued: conversations.get(info.id)?.inbox.length ?? 0 })),
+      send: (request, ctx) => sendToSession(sender, request, ctx)
+    }
+  }
+
+  /** `send_to_session`: mesajı hedefin kuyruğuna koyar, hedef boştaysa uyandırır; istenirse yanıtını bekler. */
+  async function sendToSession(sender: Conversation, request: SessionSendRequest, ctx: ToolContext): Promise<string> {
+    const wanted = request.session.toLowerCase().replace(/^@?chat:/, '')
+    if (!/^[0-9a-f-]{4,36}$/.test(wanted)) throw new ToolError(`"${request.session}" is not a session id. Call list_sessions.`)
+    const matches = (await listSessions()).filter((info) => info.id !== sender.id && info.id.startsWith(wanted))
+    if (matches.length === 0) throw new ToolError(`No other session has the id ${request.session}. Call list_sessions.`)
+    if (matches.length > 1) throw new ToolError(`${request.session} matches ${matches.length} sessions; use a longer id.`)
+    const info = matches[0]
+    const label = `"${info.title}" (${shortId(info.id)})`
+    const target = await conversationById(info.id)
+    if (!target) throw new ToolError(`Session ${label} could not be read.`)
+    // Uyandırılan tur açık projenin tool'larıyla çalışır; başka projenin konuşması burada iş yapamaz
+    if (!target.controller && info.projectRoot !== getProjectState().root) {
+      throw new ToolError(
+        `Session ${label} belongs to another project (${info.projectRoot ?? 'no project'}) and is not running, so it cannot work on this message here.`
+      )
+    }
+    if (request.wait && waitsFor(target, sender.id)) {
+      throw new ToolError(`Session ${label} is waiting for your reply right now: answer it in your final message instead, or send with wait=false.`)
+    }
+
+    const block: TextBlock = {
+      type: 'text',
+      text: sessionMessageText({
+        from: shortId(sender.id),
+        title: sender.saved?.title ?? 'Untitled',
+        replyReturned: request.wait,
+        body: request.message
+      })
+    }
+    const entry: InboxEntry = { block }
+    const reply = request.wait ? new Promise<TurnOutcome>((resolveReply) => (entry.reply = resolveReply)) : null
+    const wasRunning = target.controller !== null
+    target.inbox.push(entry)
+    if (!wasRunning) void wake(target)
+    const queued = `Queued for session ${label}: it has already handled ${MAX_AUTO_TURNS} messages from other sessions in a row without the user, so it will see this one only when the user next writes there.`
+    if (!reply) {
+      if (wasRunning) return `Delivered to session ${label}; it is running and will see the message after its current step.`
+      return target.controller ? `Delivered to session ${label}; it started a new turn to handle the message.` : queued
+    }
+
+    sender.waitingFor = target.id
+    let stop = () => {}
+    const aborted = new Promise<never>((_resolve, reject) => {
+      stop = () => reject(ctx.signal.reason)
+      ctx.signal.addEventListener('abort', stop, { once: true })
+    })
+    try {
+      const outcome = await Promise.race([reply, aborted])
+      if (outcome.reason === 'queued') return `${queued} No reply is coming now.`
+      if (outcome.reason === 'error' && !outcome.text) {
+        throw new ToolError(`Session ${label} could not answer: ${outcome.error ?? 'unknown error'}`)
+      }
+      const note =
+        outcome.reason === 'end'
+          ? ''
+          : outcome.reason === 'cancelled'
+            ? '\n\n(The user stopped that session before it finished; the reply may be incomplete.)'
+            : `\n\n(That session stopped early: ${outcome.error ?? outcome.reason}. The reply may be incomplete.)`
+      return `Reply from session ${label}:\n\n${outcome.text || '(It gave no final message.)'}${note}`
+    } catch (error) {
+      // Vazgeçildi: henüz modele gitmediyse mesaj geri çekilir
+      if (ctx.signal.aborted) target.inbox = target.inbox.filter((pending) => pending !== entry)
+      throw error
+    } finally {
+      ctx.signal.removeEventListener('abort', stop)
+      sender.waitingFor = null
+    }
+  }
+
+  /** `from`, doğrudan ya da bir zincirle `id`'nin yanıtını mı bekliyor? */
+  function waitsFor(from: Conversation, id: string): boolean {
+    const seen = new Set<string>()
+    let next = from.waitingFor
+    while (next && !seen.has(next)) {
+      if (next === id) return true
+      seen.add(next)
+      next = conversations.get(next)?.waitingFor ?? null
+    }
+    return false
   }
 
   // --- Alt agent'lar ---
@@ -1092,7 +1397,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     const userMessage = textMessage('user', request.prompt)
     child.messages = [userMessage]
     const tracked: Message[] = [userMessage]
-    let pendingResults: ToolResultBlock[] = []
+    let pendingResults: ContentBlock[] = []
     const flushResults = () => {
       if (pendingResults.length) tracked.push({ role: 'user', content: pendingResults })
       pendingResults = []
@@ -1358,6 +1663,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
         parseGoal(b.text) === undefined &&
         parseProjectInstructions(b.text) === undefined &&
         parseMemory(b.text) === undefined &&
+        !parseSessionMessage(b.text) &&
         !isConversationSummary(b.text) &&
         !isEditorContext(b.text)
           ? [b.text]
@@ -1512,23 +1818,7 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     }
     const found = await readSession(target)
     if (!found) throw new Error(l('Konuşma bulunamadı.', 'Conversation not found.'))
-    const calls = found.calls ?? []
-    activate({
-      ...newConversation(stored.permissionMode, found.mode ?? DEFAULT_AGENT_MODE),
-      id: found.id,
-      saved: { title: found.title, projectRoot: found.projectRoot },
-      messages: closeDanglingToolCalls(found.messages),
-      goal: found.goal ?? null,
-      calls,
-      // Çağrı kaydı olan konuşmada toplam yeniden hesaplanır; eski kayıtta toplam tek başına durur
-      legacyUsage: calls.length > 0 ? undefined : (found.usage ?? newUsage()),
-      parent: found.parent ?? null,
-      selection: found.selection ?? null,
-      // Bellekte olmayan konuşmanın alt agent'ları çalışıyor olamaz (uygulama kapanmış olmalı)
-      subagents: new Map(
-        (found.subagents ?? []).map((info) => [info.callId, info.status === 'running' ? { ...info, status: 'cancelled' as const } : info])
-      )
-    })
+    activate(restoreConversation(found))
     return state()
   })
   ipcMain.handle(IpcChannel.agentDeleteSession, async (_event, id: unknown) => {
@@ -1537,8 +1827,9 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
     const conversation = conversations.get(target)
     if (conversation) {
       await settle(conversation)
-      // Silinen konuşma bir daha diske yazılmasın
+      // Silinen konuşma bir daha diske yazılmasın; ona yazıp yanıt bekleyen oturumlar beklemesin
       conversation.saved = null
+      failInbox(conversation, 'The user deleted that session.')
       conversations.delete(target)
       if (conversation === active) activate(freshConversation())
     }
@@ -1559,6 +1850,19 @@ export function setupAgent(getWindow: () => BrowserWindow | null, server: Skript
   })
   ipcMain.on(IpcChannel.agentApproval, (_event, id: unknown, approved: unknown) => {
     pendingApprovals.get(Number(id))?.done(approved === true)
+  })
+  ipcMain.on(IpcChannel.agentAnswer, (_event, id: unknown, answers: unknown) => {
+    const pending = pendingQuestions.get(Number(id))
+    if (!pending) return
+    if (!Array.isArray(answers)) return pending.done(null)
+    // Arayüzden geleni doğrula: soru başına bir dizi, yalnızca kısa metinler
+    const clean = pending.questions.map((_, index): string[] => {
+      const row: unknown = answers[index]
+      return Array.isArray(row)
+        ? row.filter((item): item is string => typeof item === 'string' && item.trim() !== '').map((item) => item.trim().slice(0, 2000))
+        : []
+    })
+    pending.done(clean)
   })
 
   // Ayarlar penceresi açıldığında beklemesin diye kataloğu arka planda hazırla
@@ -1711,6 +2015,7 @@ const SUBAGENT_INSTRUCTIONS = [
   '# Subagent',
   'You are a subagent: the main agent gave you the task in the first message. The user does not read your replies; your final message is returned to the main agent as the result.',
   '- Work on the task until it is done, without asking questions. If something blocks you, stop and explain what is missing.',
+  '- You cannot message other sessions; everything goes into your final report.',
   '- End with a concise, complete report: what you found or changed (with file paths and line numbers), and anything left undone. Write it in English unless the task says otherwise.'
 ].join('\n')
 
@@ -1775,6 +2080,7 @@ function systemPrompt(
     '- You may call several read-only tools in one response; they run in parallel. File changes and commands run one at a time, in the order you list them.',
     '- When run_subagent is available, you can hand self-contained work to subagents: broad searches or reviews that would flood your context, or independent tasks that can run in parallel (call it several times in one response). Give each a complete prompt, since it cannot see this conversation; pick a cheaper model or lower effort from list_models for simple work. Do not use subagents for small tasks you can do directly.',
     '- For multi-step work (3 or more steps) keep the plan with update_todos: put the whole list in one call, mark a step in_progress before starting it and completed as soon as it is done. Do not use it for simple one-step requests.',
+    '- When the request is ambiguous or the choice between reasonable approaches is the user\'s, ask with ask_user_question (2-6 options, recommended first) instead of guessing; never use it for things you can look up or to ask permission. After asking, wait for the answer before doing the work it affects.',
     '- Reply in the language the user writes in.',
     '- The chat panel renders Markdown headings (#, ##, ###), **bold**, `inline code` and ``` code blocks; other Markdown is shown as plain text.',
     '',
@@ -1794,7 +2100,16 @@ function systemPrompt(
     MEMORY_INSTRUCTIONS,
     '',
     '# Goal',
-    GOAL_INSTRUCTIONS
+    GOAL_INSTRUCTIONS,
+    '',
+    '# Other sessions',
+    SESSION_MESSAGE_INSTRUCTIONS,
+    '',
+    '# Web research',
+    WEB_INSTRUCTIONS,
+    '',
+    '# Web browser',
+    BROWSER_INSTRUCTIONS
   ].join('\n')
 }
 

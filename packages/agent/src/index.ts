@@ -28,19 +28,28 @@ export {
   type AgentLanguageService,
   type AgentTool,
   type ApprovalRequest,
+  type BrowserController,
   type ConversationArchive,
   type ConversationInfo,
   type FileChange,
   type JsonSchema,
   type SubagentModel,
   type SubagentRequest,
+  type SessionMessenger,
+  type SessionPeer,
+  type SessionSendRequest,
   type SubagentRunner,
   type ToolContext,
   type ToolDiagnostic,
   type ToolPermission,
   type Todo,
-  type TodoStatus
+  type TodoStatus,
+  type UserQuestion
 } from './tool'
+export { BROWSER_INSTRUCTIONS, BROWSER_TOOL_NAMES, browserTools } from './tools/browser'
+export { createWebTools, WEB_INSTRUCTIONS, WEB_TOOL_NAMES, type WebToolOptions } from './tools/web'
+export { ADDON_RESEARCH_TOOL_NAMES, createAddonResearchTools, type AddonResearchOptions } from './tools/skript/addon-research'
+export { ASK_USER_TOOL_NAMES, askUserQuestionTool, askUserTools } from './tools/ask-user'
 export {
   DEFAULT_PERMISSION_MODE,
   isPermissionMode,
@@ -170,6 +179,13 @@ export {
 } from './conversations'
 export { conversationTools, readConversationTool, searchConversationsTool } from './tools/conversations'
 export { latestTodos, MAX_TODOS, todoTool } from './tools/todo'
+export {
+  parseSessionMessage,
+  SESSION_MESSAGE_INSTRUCTIONS,
+  sessionMessageText,
+  type SessionMessage
+} from './session-messages'
+export { listSessionsTool, sendToSessionTool, SESSION_TOOL_NAMES, sessionTools } from './tools/sessions'
 export {
   listModelsTool,
   resolveSubagentEffort,

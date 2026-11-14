@@ -10,6 +10,7 @@ import {
   type SkriptVersionOption
 } from '../../shared/ipc'
 import { AgentPanel } from './agent-panel'
+import { BrowserPane } from './browser-pane'
 import { pickAddons } from './addon-picker'
 import { api } from './api'
 import { ServerConsole } from './console'
@@ -773,6 +774,22 @@ const agentPanel = new AgentPanel(
   }
 )
 $('#status-agent').addEventListener('click', () => agentPanel.toggle())
+
+const browserPane = new BrowserPane(
+  {
+    pane: $('#browser-pane'),
+    tabs: $('#browser-tabs'),
+    form: $<HTMLFormElement>('#browser-bar'),
+    address: $<HTMLInputElement>('#browser-address'),
+    back: $<HTMLButtonElement>('#browser-back'),
+    forward: $<HTMLButtonElement>('#browser-forward'),
+    reload: $<HTMLButtonElement>('#browser-reload'),
+    close: $<HTMLButtonElement>('#browser-close'),
+    content: $('#browser-content')
+  },
+  (visible) => $('#agent-browser').classList.toggle('active', visible)
+)
+$('#agent-browser').addEventListener('click', () => browserPane.toggle())
 
 const actions: Record<MenuAction, () => unknown> = {
   'new-file': () => docs.newUntitled(),

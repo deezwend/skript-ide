@@ -215,6 +215,46 @@ export interface Todo {
   status: TodoStatus
 }
 
+/** `ask_user_question`'ın tek sorusu. */
+export interface UserQuestion {
+  question: string
+  /** Kartta soruyu etiketleyen çok kısa başlık. */
+  header?: string
+  options: { label: string; description?: string }[]
+  multiSelect?: boolean
+}
+
+/**
+ * Agent'ın kullandığı web tarayıcısı (masaüstü uygulamasındaki kalıcı oturumlu pencere). Kullanıcı hesaplarına
+ * pencerede kendisi giriş yapar; oturum çerezleri saklanır, agent parolaları hiç görmez.
+ * Sayfa içeriği güvenilmezdir: `snapshot` çıktısı veridir, talimat değildir.
+ */
+export interface BrowserController {
+  /** Sayfayı yükler (yalnızca http/https) ve `snapshot` döndürür. */
+  navigate(url: string, signal: AbortSignal): Promise<string>
+  /** Geçerli sayfanın adresi, başlığı, metni ve numaralı etkileşimli öğeleri. */
+  snapshot(): Promise<string>
+  /** Numaralı öğenin kısa tanımı (onay penceresi için); sayfa değiştiyse hata fırlatır. */
+  describe(ref: number): Promise<string>
+  click(ref: number, signal: AbortSignal): Promise<string>
+  type(ref: number, text: string, options: { clear: boolean; submit: boolean }, signal: AbortSignal): Promise<string>
+  /** Numaralı dosya seçme alanına (`input[type=file]`) dosya verir; yollar mutlaktır ve çağıran tarafından doğrulanmıştır. */
+  upload(ref: number, files: readonly string[], signal: AbortSignal): Promise<string>
+  press(key: string, signal: AbortSignal): Promise<string>
+  scroll(direction: 'up' | 'down', signal: AbortSignal): Promise<string>
+  back(signal: AbortSignal): Promise<string>
+  /** Açık sekmeler (`*` etkin olan). */
+  listTabs(): string
+  /** Yeni sekme açar, etkinleştirir ve `snapshot` döndürür; adres verilmezse boş sekme. */
+  newTab(url: string | undefined, signal: AbortSignal): Promise<string>
+  selectTab(id: number): Promise<string>
+  closeTab(id: number): Promise<string>
+  /** Tarayıcı panelini öne getirir (kullanıcı giriş yapabilsin, olanları izlesin). */
+  show(): void
+  /** Geçerli sayfanın adresi; henüz hiç açılmadıysa `null`. */
+  currentUrl(): string | null
+}
+
 export interface ToolContext {
   /** Açık proje klasörü; dosya erişimi bunun dışına çıkamaz. `null`: proje açık değil. */
   projectRoot: string | null
@@ -238,6 +278,15 @@ export interface ToolContext {
   conversations?: ConversationArchive
   /** Alt agent çalıştırıcısı; yoksa `run_subagent`/`list_models` hata döndürür. */
   subagents?: SubagentRunner
+  /** Web tarayıcısı; yoksa `browser_*` tool'ları hata döndürür. */
+  browser?: BrowserController
+  /** Diğer oturumlarla mesajlaşma; yoksa `list_sessions`/`send_to_session` hata döndürür. */
+  sessions?: SessionMessenger
+  /**
+   * `ask_user_question`: soruları kullanıcıya gösterir ve her soru için seçilen (ya da yazılan) cevapları döndürür;
+   * kullanıcı kapatırsa ya da tur iptal edilirse `null`. Yoksa tool hata döndürür.
+   */
+  askUser?(questions: readonly UserQuestion[]): Promise<string[][] | null>
   /** Döngünün o an çalıştırdığı tool çağrısının kimliği; arayüz alt agent'ı çağrının satırına bağlar. */
   callId?: string
 }
@@ -271,6 +320,34 @@ export interface SubagentRunner {
   models(): Promise<readonly SubagentModel[]>
   /** Alt agent'ı bitene kadar çalıştırır; son mesajını döndürür. İptal `ctx.signal` ile yapılır. */
   run(request: SubagentRequest, ctx: ToolContext): Promise<string>
+}
+
+/**
+ * Mesaj gönderilebilecek başka bir oturum.
+ * - `running`: turu sürüyor; mesaj bir sonraki adımında görülür.
+ * - `approval`: turu kullanıcı onayı bekliyor.
+ * - `idle`: tur yok; mesaj yeni bir tur başlatır.
+ */
+export interface SessionPeer extends ConversationInfo {
+  status: 'running' | 'approval' | 'idle'
+  /** Henüz teslim edilmemiş mesaj sayısı. */
+  queued: number
+}
+
+export interface SessionSendRequest {
+  /** Oturum kimliği ya da benzersiz öneki. */
+  session: string
+  message: string
+  /** Hedefin bu mesajı işleyen turu bitene kadar bekle ve son mesajını döndür. */
+  wait: boolean
+}
+
+/** Oturumlar arası mesajları taşıyan taraf (masaüstü uygulaması). */
+export interface SessionMessenger {
+  /** Çağıran oturum hariç, yeniden eskiye. */
+  list(): Promise<readonly SessionPeer[]>
+  /** Mesajı teslim eder; `wait` ise yanıtı, değilse teslim durumunu döndürür. Bekleme `ctx.signal` ile iptal edilir. */
+  send(request: SessionSendRequest, ctx: ToolContext): Promise<string>
 }
 
 /** Kayıtlı bir konuşmanın özeti (mesajlar olmadan). */

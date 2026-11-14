@@ -2,7 +2,7 @@ import { compactMessages } from './compaction'
 import { changesDiffStat } from './diff-stat'
 import { trimToolResults, type ContextLimits } from './context'
 import { DEFAULT_PERMISSION_MODE, needsApproval, type PermissionMode } from './permission'
-import { toolCalls, type Message, type ToolCallBlock, type ToolResultBlock } from './messages'
+import { toolCalls, type ContentBlock, type Message, type ToolCallBlock, type ToolResultBlock } from './messages'
 import { completeWithRetry, type ModelProvider, type ModelResponse, type StreamDelta, type TokenUsage } from './provider'
 import { validateInput, type ToolRegistry } from './registry'
 import { ToolError, type FileChange, type ToolContext } from './tool'
@@ -29,6 +29,8 @@ export type AgentEvent =
    * yeniden denenecek. O ana kadar akan `delta`'lar geçersizdir, yanıt baştan yeniden akar.
    */
   | { type: 'retry'; attempt: number; maxAttempts: number; delayMs: number; error: string }
+  /** Tur sürerken `inbox`'tan gelen bloklar tool sonuçlarının ardına, aynı kullanıcı mesajına eklendi. */
+  | { type: 'inbox'; blocks: ContentBlock[] }
   | { type: 'done'; reason: AgentStopReason }
 
 /** `context_full`: kısaltmaya rağmen geçmiş bağlam penceresine sığmıyor. */
@@ -55,6 +57,12 @@ export interface RunAgentOptions {
   }
   /** Geçici sağlayıcı hatalarında yeniden denemeler arasındaki beklemeler; varsayılan `DEFAULT_RETRY_DELAYS_MS`. */
   retryDelaysMs?: readonly number[]
+  /**
+   * Tur sürerken gelen mesajlar (ör. başka oturumlardan): her tool turundan sonra boşaltılır, dönen
+   * bloklar tool sonuçlarıyla aynı kullanıcı mesajına eklenir. Model tool istemeyi bıraktıktan sonra
+   * gelenler burada okunmaz; çağıran onları sonraki tura taşır.
+   */
+  inbox?: () => ContentBlock[]
   onEvent?: (event: AgentEvent) => void
 }
 
@@ -165,7 +173,9 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
     if (calls.length === 0) return finish('end')
 
     const results = await runToolCalls(calls, registry, context, permissionMode, onEvent)
-    messages.push({ role: 'user', content: results })
+    const incoming = options.inbox?.() ?? []
+    messages.push({ role: 'user', content: [...results, ...incoming] })
+    if (incoming.length) onEvent?.({ type: 'inbox', blocks: incoming })
   }
 
   return finish('max_turns')

@@ -13,7 +13,8 @@ import type {
   StreamDelta,
   ToolCallBlock,
   ToolResultBlock,
-  Todo
+  Todo,
+  UserQuestion
 } from '@skript-ide/agent'
 import type { Locale } from '@skript-ide/i18n'
 import type {
@@ -37,7 +38,8 @@ export type {
   ProblemReport,
   ToolCallBlock,
   ToolResultBlock,
-  Todo
+  Todo,
+  UserQuestion
 } from '@skript-ide/agent'
 export type {
   AddonIssue,
@@ -132,6 +134,32 @@ export interface ValidateRequest {
   source: string
   fileName: string
   content: string
+}
+
+// --- Tarayıcı ---
+
+/** Uygulama içi tarayıcının bir sekmesi. */
+export interface BrowserTabInfo {
+  id: number
+  title: string
+  url: string
+  loading: boolean
+}
+
+export interface BrowserState {
+  tabs: BrowserTabInfo[]
+  /** Etkin sekme; sekme yoksa `null`. */
+  activeId: number | null
+  canGoBack: boolean
+  canGoForward: boolean
+}
+
+/** Tarayıcı içeriğinin pencere içindeki konumu (CSS pikseli). */
+export interface BrowserBounds {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 // --- AI agent ---
@@ -235,6 +263,8 @@ export interface AgentState {
   streaming?: { text: string; reasoning: string } | null
   /** Açık konuşmada yanıt bekleyen onaylar; panel konuşmaya dönünce kartları yeniden çizer. */
   approvals?: { id: number; request: ApprovalRequest }[]
+  /** Açık konuşmada yanıt bekleyen `ask_user_question` soruları. */
+  questions?: { id: number; questions: UserQuestion[] }[]
   /** Seçili sağlayıcının anahtar kaynağı. */
   keySource: ApiKeySource
   /** ChatGPT aboneliği (Codex) oturumu; giriş yapılmadıysa `signedIn: false`. */
@@ -285,6 +315,8 @@ export type AgentUiEvent =
   | { type: 'tool-start'; call: ToolCallBlock }
   | { type: 'tool-result'; call: ToolCallBlock; result: ToolResultBlock }
   | { type: 'approval-request'; id: number; request: ApprovalRequest }
+  /** Agent `ask_user_question` ile soru sordu; cevap `agentRespondQuestion` ile döner. */
+  | { type: 'question-request'; id: number; questions: UserQuestion[] }
   /** Agent diskteki bir dosyayı değiştirdi; açık sekme varsa yeniden yüklenmeli. */
   | { type: 'file-changed'; path: string }
   /** Bağlam dolmaya yaklaştığı için bu kadar eski tool sonucu kısaltıldı. */
@@ -421,7 +453,26 @@ export interface SkriptIdeApi {
   /** Agent modunu değiştirir; yalnızca konuşmada henüz mesaj yokken çalışır. */
   agentSetAgentMode(mode: AgentMode): Promise<AgentState>
   agentRespondApproval(id: number, approved: boolean): void
+  /** Soru başına seçilen/yazılan cevaplar; `null`: kullanıcı soruyu kapattı. */
+  agentRespondQuestion(id: number, answers: string[][] | null): void
   onAgentEvent(listener: (event: AgentEvent) => void): () => void
+
+  // --- Tarayıcı ---
+  browserGetState(): Promise<BrowserState>
+  /** Yeni sekme açar ve etkinleştirir; adres verilmezse arama sayfası. */
+  browserNewTab(input?: string): Promise<void>
+  browserCloseTab(id: number): Promise<void>
+  browserSelectTab(id: number): Promise<void>
+  /** Etkin sekmede adrese gider; adres olmayan metin web'de aranır. */
+  browserNavigate(input: string): Promise<void>
+  browserBack(): Promise<void>
+  browserForward(): Promise<void>
+  browserReload(): Promise<void>
+  /** Sayfa görünümünün konumu; `null`: tarayıcı paneli kapalı, görünüm gizlenir (sekmeler açık kalır). */
+  browserSetBounds(bounds: BrowserBounds | null): void
+  onBrowserState(listener: (state: BrowserState) => void): () => void
+  /** Agent tarayıcıyı kullanmaya başladı; panel açılmalı. */
+  onBrowserReveal(listener: () => void): () => void
 
   // --- Güncellemeler ---
   /** Uygulamanın sürümü (`package.json`). */
@@ -498,6 +549,7 @@ export const IpcChannel = {
   agentSetPermissionMode: 'agent:set-permission-mode',
   agentSetAgentMode: 'agent:set-agent-mode',
   agentApproval: 'agent:approval',
+  agentAnswer: 'agent:answer',
   agentEvent: 'agent:event',
   updateStatus: 'update:status',
   updateCheck: 'update:check',
@@ -506,5 +558,16 @@ export const IpcChannel = {
   updateStatusChanged: 'update:status-changed',
   releaseNotes: 'update:release-notes',
   whatsNew: 'update:whats-new',
-  appVersion: 'app:version'
+  appVersion: 'app:version',
+  browserState: 'browser:state',
+  browserReveal: 'browser:reveal',
+  browserNewTab: 'browser:new-tab',
+  browserCloseTab: 'browser:close-tab',
+  browserSelectTab: 'browser:select-tab',
+  browserNavigate: 'browser:navigate',
+  browserBack: 'browser:back',
+  browserForward: 'browser:forward',
+  browserReload: 'browser:reload',
+  browserSetBounds: 'browser:set-bounds',
+  browserGetState: 'browser:get-state'
 } as const

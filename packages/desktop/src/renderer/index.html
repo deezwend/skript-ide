@@ -103,6 +103,17 @@
             </form>
           </div>
         </section>
+        <div id="browser-pane" hidden>
+          <div id="browser-tabs" role="tablist"></div>
+          <form id="browser-bar" autocomplete="off">
+            <button type="button" id="browser-back" class="icon-button" title="Geri" data-en-title="Back">←</button>
+            <button type="button" id="browser-forward" class="icon-button" title="İleri" data-en-title="Forward">→</button>
+            <button type="button" id="browser-reload" class="icon-button" title="Yenile" data-en-title="Reload">⟳</button>
+            <input id="browser-address" spellcheck="false" placeholder="Adres yaz ya da ara" data-en-placeholder="Type an address or search" />
+            <button type="button" id="browser-close" class="icon-button" title="Tarayıcıyı gizle (sekmeler açık kalır)" data-en-title="Hide the browser (tabs stay open)">✕</button>
+          </form>
+          <div id="browser-content"></div>
+        </div>
       </main>
 
       <aside id="agent-panel" aria-label="AI Agent" hidden>
@@ -110,6 +121,7 @@
           <span class="agent-title">AI Agent</span>
           <button id="agent-model" class="agent-model" title=""></button>
           <span class="spacer"></span>
+          <button id="agent-browser" class="icon-button" title="Tarayıcı (agent bunu kullanır; hesaplarına buradan giriş yap)" data-en-title="Browser (the agent uses it; sign in to your accounts here)">🌐</button>
           <button id="agent-history" class="icon-button" title="Konuşma geçmişi" data-en-title="Conversation history">☰</button>
           <button id="agent-new" class="icon-button" title="Yeni konuşma" data-en-title="New conversation">＋</button>
           <button id="agent-close" class="icon-button" title="Kapat" data-en-title="Close">✕</button>

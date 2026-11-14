@@ -8,6 +8,7 @@ import type {
   AgentUsage,
   ApiKeySource,
   ApprovalRequest,
+  UserQuestion,
   CatalogModel,
   CatalogProvider,
   ContentBlock,
@@ -35,6 +36,7 @@ import { isConversationSummary } from '@skript-ide/agent/src/compaction'
 import { parseGoal } from '@skript-ide/agent/src/goal'
 import { parseProjectInstructions } from '@skript-ide/agent/src/project-memory'
 import { parseMemory } from '@skript-ide/agent/src/memory'
+import { parseSessionMessage, type SessionMessage } from '@skript-ide/agent/src/session-messages'
 import { PERMISSION_MODES } from '@skript-ide/agent/src/permission'
 import { AGENT_MODES } from '@skript-ide/agent/src/mode'
 import { changesDiffStat, type DiffStat } from '@skript-ide/agent/src/diff-stat'
@@ -593,6 +595,7 @@ export class AgentPanel {
     if (state.streaming?.reasoning) this.renderDelta('reasoning', state.streaming.reasoning)
     if (state.streaming?.text) this.renderDelta('text', state.streaming.text)
     for (const approval of state.approvals ?? []) this.renderApproval(approval.id, approval.request)
+    for (const question of state.questions ?? []) this.renderQuestion(question.id, question.questions)
   }
 
   private renderBackgroundRuns(): void {
@@ -1487,6 +1490,8 @@ export class AgentPanel {
         this.ui.transcript.querySelector('.agent-empty')?.remove()
         // Konuşma başladı: mod artık bu konuşmaya bağlı
         this.ui.modeSelect.disabled = true
+        // Başka bir oturumun mesajı açık konuşmada tur başlatmış olabilir
+        if (!this.running) this.setRunning(true)
         this.renderMessage(event.message)
         break
       case 'delta':
@@ -1521,6 +1526,9 @@ export class AgentPanel {
         break
       case 'approval-request':
         this.renderApproval(event.id, event.request)
+        break
+      case 'question-request':
+        this.renderQuestion(event.id, event.questions)
         break
       case 'usage':
         // `/usage` dökümü aynı nesneden okur; olay geldikçe tazelenmeli
@@ -1602,12 +1610,14 @@ export class AgentPanel {
     if (event.type === 'done') this.backgroundRuns.delete(event.sessionId)
     else this.backgroundRuns.add(event.sessionId)
     this.renderBackgroundRuns()
-    if (event.type !== 'approval-request' && event.type !== 'done') return
+    if (event.type !== 'approval-request' && event.type !== 'question-request' && event.type !== 'done') return
     void api.agentListSessions().then(
       (sessions) => {
         const title = sessions.find((session) => session.id === event.sessionId)?.title ?? l('Arka plandaki konuşma', 'A background conversation')
         if (event.type === 'approval-request') {
           this.renderNote(l(`“${title}” onay bekliyor; geçmişten açıp yanıtla.`, `“${title}” is waiting for approval; open it from the history to respond.`), 'warning')
+        } else if (event.type === 'question-request') {
+          this.renderNote(l(`“${title}” sana bir soru sordu; geçmişten açıp yanıtla.`, `“${title}” asked you a question; open it from the history to answer.`), 'warning')
         } else if (event.reason === 'error') {
           this.renderNote(l(`“${title}” hatayla durdu: ${event.error ?? ''}`, `“${title}” stopped with an error: ${event.error ?? ''}`), 'error')
         } else if (event.reason !== 'cancelled') {
@@ -1654,6 +1664,7 @@ export class AgentPanel {
     for (const block of message.content) {
       const thought = reasoningText(block)
       const attachment = message.role === 'user' && block.type === 'text' ? parseAttachment(block.text) : null
+      const sessionMessage = message.role === 'user' && block.type === 'text' ? parseSessionMessage(block.text) : null
       // Hedef bloğu yalnızca modele gider; `/goal` zaten not olarak gösteriliyor
       if (message.role === 'user' && block.type === 'text' && parseGoal(block.text) !== undefined) continue
       // Proje talimatları ve sıkıştırma özeti de yalnızca modele gider
@@ -1666,6 +1677,8 @@ export class AgentPanel {
         this.append(this.reasoningBox(thought, false))
       } else if (attachment) {
         this.append(this.attachmentChip(attachment.path, attachment.content, attachment.conversation?.title))
+      } else if (sessionMessage) {
+        this.append(this.sessionMessageBubble(sessionMessage))
       } else if (block.type === 'text' && block.text.trim()) {
         this.append(message.role === 'user' ? this.userBubble(block.text) : this.assistantText(block.text))
       } else if (block.type === 'image') {
@@ -1759,6 +1772,16 @@ export class AgentPanel {
       last = start + match[2].length
     }
     bubble.append(text.slice(last))
+    return bubble
+  }
+
+  /** Başka bir oturumun agent'ından gelen mesaj: kullanıcının değil, gönderen oturumun adıyla. */
+  private sessionMessageBubble(message: SessionMessage): HTMLElement {
+    const bubble = el('div', 'agent-msg session')
+    const header = message.replyReturned
+      ? l(`↪ “${message.title}” oturumu soruyor · yanıt ona döner`, `↪ Session “${message.title}” asks · the reply goes back to it`)
+      : l(`↪ “${message.title}” oturumundan`, `↪ From session “${message.title}”`)
+    bubble.append(el('div', 'agent-session-from', header), el('div', 'agent-text', message.body))
     return bubble
   }
 
@@ -1926,6 +1949,91 @@ export class AgentPanel {
     approve.addEventListener('click', () => decide(true))
     this.append(card)
     approve.focus()
+  }
+
+  /** `ask_user_question` kartı: soru başına seçenekler (tek/çoklu) ve serbest yazı alanı. */
+  private renderQuestion(id: number, questions: UserQuestion[]): void {
+    const card = el('div', 'agent-approval agent-question')
+    const picks = questions.map(() => new Set<string>())
+    const customs: HTMLInputElement[] = []
+    const submit = el('button', 'primary', l('Gönder', 'Send'))
+    const skip = el('button', undefined, l('Atla', 'Skip'))
+
+    const answers = () =>
+      questions.map((_, index) => {
+        const custom = customs[index].value.trim()
+        return [...picks[index], ...(custom ? [custom] : [])]
+      })
+    const refresh = () => {
+      submit.disabled = answers().some((row) => row.length === 0)
+    }
+
+    questions.forEach((question, index) => {
+      const block = el('div', 'agent-question-block')
+      const title = el('div', 'agent-approval-title', question.question)
+      if (question.header) title.prepend(el('span', 'agent-question-header', question.header))
+      block.append(title)
+      const list = el('div', 'agent-question-options')
+      const buttons: HTMLButtonElement[] = []
+      const custom = el('input', 'agent-question-custom') as HTMLInputElement
+      custom.type = 'text'
+      custom.placeholder = l('Veya kendi cevabını yaz…', 'Or type your own answer…')
+      customs.push(custom)
+      for (const option of question.options) {
+        const button = el('button', 'agent-question-option') as HTMLButtonElement
+        button.append(el('span', 'agent-question-label', option.label))
+        if (option.description) button.append(el('span', 'agent-question-description', option.description))
+        button.addEventListener('click', () => {
+          const set = picks[index]
+          if (question.multiSelect) {
+            if (!set.delete(option.label)) set.add(option.label)
+          } else {
+            const wasPicked = set.has(option.label)
+            set.clear()
+            if (!wasPicked) set.add(option.label)
+            custom.value = ''
+          }
+          buttons.forEach((other, i) => other.classList.toggle('selected', set.has(question.options[i].label)))
+          refresh()
+        })
+        buttons.push(button)
+        list.append(button)
+      }
+      custom.addEventListener('input', () => {
+        if (!question.multiSelect && custom.value.trim()) {
+          picks[index].clear()
+          buttons.forEach((button) => button.classList.remove('selected'))
+        }
+        refresh()
+      })
+      block.append(list, custom)
+      card.append(block)
+    })
+
+    const actions = el('div', 'agent-approval-actions')
+    actions.append(skip, submit)
+    card.append(actions)
+    submit.disabled = true
+
+    const summary = questions.map((question) => question.header ?? question.question).join(' · ')
+    const finish = (label: string) => {
+      card.replaceChildren(el('div', 'agent-approval-title', `${summary} — ${label}`))
+      card.classList.add('decided')
+      const index = this.disposers.indexOf(cancel)
+      if (index >= 0) this.disposers.splice(index, 1)
+    }
+    const cancel = () => finish(l('iptal edildi', 'cancelled'))
+    this.disposers.push(cancel)
+    skip.addEventListener('click', () => {
+      api.agentRespondQuestion(id, null)
+      finish(l('✕ Atlandı', '✕ Skipped'))
+    })
+    submit.addEventListener('click', () => {
+      const given = answers()
+      api.agentRespondQuestion(id, given)
+      finish(`✓ ${given.map((row) => row.join(', ')).join(' · ')}`)
+    })
+    this.append(card)
   }
 
   /** Tur bittiğinde yanıtlanmamış onay kartlarını kapatır (ana süreç onları zaten reddetti). */

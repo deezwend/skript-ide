@@ -9,6 +9,7 @@ import { parseMemory } from './memory'
 import { conversationAttachmentText, CONVERSATION_REF_LENGTH, parseAttachment } from './mentions'
 import type { Message } from './messages'
 import { parseProjectInstructions } from './project-memory'
+import { parseSessionMessage } from './session-messages'
 import type { ConversationArchive, ConversationInfo } from './tool'
 
 /** `@chat:…` ile eklenen konuşmanın en fazla karakter sayısı; fazlası `read_conversation` ile okunur. */
@@ -46,6 +47,11 @@ export function conversationTranscript(messages: readonly Message[]): string {
         }
         if (isConversationSummary(text)) {
           parts.push(`Summary of earlier messages: ${text.replace(/^<conversation_summary>\n|\n<\/conversation_summary>$/g, '').trim()}`)
+          continue
+        }
+        const sessionMessage = parseSessionMessage(text)
+        if (sessionMessage) {
+          parts.push(`Message from session ${sessionMessage.from} ("${sessionMessage.title}"): ${sessionMessage.body.trim()}`)
           continue
         }
         const goal = parseGoal(text)

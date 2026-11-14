@@ -1648,6 +1648,21 @@ button.migration-location {
   white-space: pre-wrap;
 }
 
+.agent-msg.session {
+  align-self: flex-end;
+  max-width: 90%;
+  padding: 6px 10px;
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-selected);
+}
+
+.agent-session-from {
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .agent-text {
   white-space: pre-wrap;
 }
@@ -1959,6 +1974,69 @@ h5.agent-heading {
 .agent-composer-bar button.primary {
   background: var(--accent);
   color: #fff;
+}
+
+.agent-approval-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.agent-question-block {
+  margin-bottom: 10px;
+}
+
+.agent-question-header {
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.agent-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.agent-question-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.agent-question-option:hover {
+  border-color: var(--accent);
+}
+
+.agent-question-option.selected {
+  border-color: var(--accent);
+  background: rgba(0, 120, 212, 0.18);
+}
+
+.agent-question-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-question-description {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.agent-question-custom {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .agent-composer-bar button.stop {
@@ -2556,4 +2634,116 @@ h5.agent-heading {
   width: 100%;
   margin-bottom: 8px;
   accent-color: var(--accent);
+}
+
+/* --- Uygulama içi tarayıcı --- */
+
+#main {
+  position: relative;
+}
+
+#browser-pane {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #1e1e1e);
+}
+
+#browser-pane[hidden] {
+  display: none;
+}
+
+#browser-tabs {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  overflow-x: auto;
+  background: #252526;
+}
+
+.browser-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 180px;
+  min-width: 90px;
+  padding: 0 6px 0 12px;
+  height: 34px;
+  border-right: 1px solid #1e1e1e;
+  color: #9d9d9d;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.browser-tab.active {
+  background: #1e1e1e;
+  color: #fff;
+}
+
+.browser-tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-tab button,
+.browser-new-tab {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.browser-tab button:hover,
+.browser-new-tab:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.browser-new-tab {
+  flex: none;
+  align-self: center;
+  font-size: 16px;
+  color: #cccccc;
+}
+
+#browser-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #333;
+}
+
+#browser-bar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#browser-address {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #3c3c3c;
+  border-radius: 13px;
+  background: #2b2b2b;
+  color: #e6e6e6;
+  font: inherit;
+  font-size: 12px;
+}
+
+#browser-address:focus {
+  outline: 1px solid #0e639c;
+}
+
+#browser-content {
+  flex: 1;
+  min-height: 0;
 }

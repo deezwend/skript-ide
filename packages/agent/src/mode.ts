@@ -28,6 +28,9 @@ const QUICK_EXCLUDED_TOOLS = new Set([
   'dump_type_values',
   'search_java_api',
   'get_java_class',
+  'search_addon_syntax',
+  'search_plugins',
+  'github_search',
   'create_checkpoint',
   'list_checkpoints',
   'restore_checkpoint',
@@ -58,7 +61,7 @@ export function modeInstructions(mode: AgentMode): string {
         '- Make the change with as few tool calls as possible: read only what you need, edit, stop.',
         '- The automatic feedback after an edit is enough; call get_diagnostics only if that feedback reports a problem you cannot fix from it.',
         '- Look up syntax only when you are genuinely unsure it exists.',
-        '- Server, test, example, migration and todo tools are not available in this mode. If the user needs runtime proof, tell them to start a new conversation in Standard or Thorough mode.',
+        '- Server, test, example, migration, addon research and todo tools are not available in this mode; web_search and web_fetch are. If the user needs runtime proof, tell them to start a new conversation in Standard or Thorough mode.',
         '- Keep replies to a few sentences.'
       ].join('\n')
     case 'standard':
