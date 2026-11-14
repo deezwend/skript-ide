@@ -238,7 +238,7 @@ export interface BrowserController {
   describe(ref: number): Promise<string>
   click(ref: number, signal: AbortSignal): Promise<string>
   type(ref: number, text: string, options: { clear: boolean; submit: boolean }, signal: AbortSignal): Promise<string>
-  /** Numaralı dosya seçme alanına (`input[type=file]`) dosya verir; yollar mutlaktır ve çağıran tarafından doğrulanmıştır. */
+  /** Numaralı dosya girişine (`input[type=file]`) ya da dosya seçme penceresini açan düğmeye dosya verir; yollar mutlaktır ve çağıran tarafından doğrulanmıştır. */
   upload(ref: number, files: readonly string[], signal: AbortSignal): Promise<string>
   press(key: string, signal: AbortSignal): Promise<string>
   scroll(direction: 'up' | 'down', signal: AbortSignal): Promise<string>

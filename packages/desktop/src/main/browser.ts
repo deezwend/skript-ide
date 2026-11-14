@@ -1,4 +1,4 @@
-import { ipcMain, session, WebContentsView, type BrowserWindow, type WebContents } from 'electron'
+import { ipcMain, session, WebContentsView, type BrowserWindow, type Debugger, type WebContents } from 'electron'
 import { ToolError, type BrowserController } from '@skript-ide/agent'
 import { IpcChannel, type BrowserBounds, type BrowserState } from '../shared/ipc'
 
@@ -8,6 +8,8 @@ const START_PAGE = 'https://www.google.com/'
 const LOAD_TIMEOUT_MS = 20_000
 /** Panelin açılıp konumunu bildirmesi için bekleme sınırı. */
 const REVEAL_TIMEOUT_MS = 3000
+/** Yükle düğmesine tıklandıktan sonra dosya seçme penceresinin açılması için bekleme sınırı. */
+const CHOOSER_TIMEOUT_MS = 3000
 /** Sayfa metni ve öğe listesi modele gitmeden önce kısaltılır. */
 const MAX_TEXT = 6000
 const MAX_ELEMENTS = 80
@@ -24,11 +26,8 @@ const SNAPSHOT_SCRIPT = `(() => {
   const clean = (t) => (t || '').replace(/\\s+/g, ' ').trim()
   const refs = []
   const items = []
-  for (const el of document.querySelectorAll(selector)) {
-    const isFile = el.tagName === 'INPUT' && el.type === 'file'
-    if (el.disabled || (!isFile && !visible(el))) continue
-    const r = el.getBoundingClientRect()
-    if (!isFile && (r.bottom < 0 || r.top > innerHeight * 3)) continue
+  const isFile = (el) => el.tagName === 'INPUT' && el.type === 'file'
+  const add = (el) => {
     const tag = el.tagName.toLowerCase()
     const type = tag === 'input' ? (el.type || 'text') : ''
     const label = clean(el.getAttribute('aria-label') || el.innerText || el.value || el.placeholder || el.title || el.alt || el.name || '').slice(0, 80)
@@ -40,11 +39,25 @@ const SNAPSHOT_SCRIPT = `(() => {
     if (tag === 'select') extra.push('options: ' + [...el.options].slice(0, 8).map((o) => clean(o.text)).join(' | '))
     refs.push(el)
     items.push({ n: refs.length, role: type ? tag + '[' + type + ']' : (el.getAttribute('role') || tag), label, extra: extra.join(', ') })
-    if (refs.length >= ${MAX_ELEMENTS}) break
+  }
+  let omitted = false
+  for (const el of document.querySelectorAll(selector)) {
+    if (el.disabled || isFile(el) || !visible(el)) continue
+    const r = el.getBoundingClientRect()
+    if (r.bottom < 0 || r.top > innerHeight * 3) continue
+    if (refs.length >= ${MAX_ELEMENTS}) { omitted = true; break }
+    add(el)
+  }
+  // Dosya girişleri çoğu zaman gizli ve sayfanın sonundadır: sınırdan bağımsız, her zaman listelenir
+  let files = 0
+  for (const el of document.querySelectorAll('input[type=file]')) {
+    if (el.disabled || files >= 10) continue
+    files++
+    add(el)
   }
   window.__agentRefs = refs
   const text = clean(document.body ? document.body.innerText : '')
-  return { url: location.href, title: document.title, text: text.slice(0, ${MAX_TEXT}), truncated: text.length > ${MAX_TEXT}, items, scrollY: Math.round(scrollY), scrollMax: Math.round(Math.max(0, document.documentElement.scrollHeight - innerHeight)) }
+  return { url: location.href, title: document.title, text: text.slice(0, ${MAX_TEXT}), truncated: text.length > ${MAX_TEXT}, items, omitted, scrollY: Math.round(scrollY), scrollMax: Math.round(Math.max(0, document.documentElement.scrollHeight - innerHeight)) }
 })()`
 
 interface Snapshot {
@@ -53,6 +66,7 @@ interface Snapshot {
   text: string
   truncated: boolean
   items: { n: number; role: string; label: string; extra: string }[]
+  omitted: boolean
   scrollY: number
   scrollMax: number
 }
@@ -63,6 +77,11 @@ interface ElementInfo {
   role: string
   label: string
   editable: boolean
+}
+
+interface FileChooser {
+  backendNodeId: number
+  multiple: boolean
 }
 
 interface Tab {
@@ -380,6 +399,7 @@ export class AgentBrowser implements BrowserController {
     for (const item of page.items) {
       lines.push(`[${item.n}] ${item.role}${item.label ? ` "${item.label}"` : ''}${item.extra ? ` (${item.extra})` : ''}`)
     }
+    if (page.omitted) lines.push(`(only the first ${MAX_ELEMENTS} elements are listed; scroll to reach the others. File inputs are always listed.)`)
     return lines.join('\n')
   }
 
@@ -408,12 +428,78 @@ export class AgentBrowser implements BrowserController {
   async click(ref: number, signal: AbortSignal): Promise<string> {
     const contents = this.contents()
     const info = await this.locate(ref)
+    // Tıklama yerel dosya seçme penceresini açarsa agent onu süremez: pencere yakalanır ve açılmaz
+    let clicked = false
+    let chooser: FileChooser | null = null
+    try {
+      chooser = await this.withDebugger(contents, (dbg) =>
+        this.interceptChooser(dbg, async () => {
+          clicked = true
+          this.mouseClick(contents, info)
+          await this.settle(contents, signal)
+        })
+      )
+    } catch (error) {
+      // Hata ayıklayıcı bağlanamadıysa (ör. DevTools açık) yakalamadan tıklanır
+      if (clicked) throw error
+      this.mouseClick(contents, info)
+      await this.settle(contents, signal)
+    }
+    const page = await this.snapshot()
+    if (!chooser) return page
+    return `This click opened a file chooser (nothing was chosen, no dialog is shown). To upload, call browser_upload with ref ${ref} and the file paths.\n\n${page}`
+  }
+
+  private mouseClick(contents: WebContents, info: ElementInfo): void {
     const base = { x: info.x, y: info.y, button: 'left' as const, clickCount: 1 }
     contents.sendInputEvent({ type: 'mouseMove', x: info.x, y: info.y })
     contents.sendInputEvent({ type: 'mouseDown', ...base })
     contents.sendInputEvent({ type: 'mouseUp', ...base })
-    await this.settle(contents, signal)
-    return this.snapshot()
+  }
+
+  /** DevTools protokolünü kullanır; hata ayıklayıcı zaten bağlıysa ona dokunmaz. */
+  private async withDebugger<T>(contents: WebContents, run: (dbg: Debugger) => Promise<T>): Promise<T> {
+    const dbg = contents.debugger
+    const attachedHere = !dbg.isAttached()
+    if (attachedHere) dbg.attach('1.3')
+    try {
+      return await run(dbg)
+    } finally {
+      if (attachedHere && dbg.isAttached()) dbg.detach()
+    }
+  }
+
+  /**
+   * `action` sürerken açılan dosya seçme penceresini yakalar (yerel pencere gösterilmez) ve ilkini döndürür.
+   * `wait` verilirse eylemden sonra pencerenin açılmasını en fazla o kadar bekler.
+   */
+  private async interceptChooser(dbg: Debugger, action: () => Promise<void>, wait = 0): Promise<FileChooser | null> {
+    let chooser: FileChooser | null = null
+    let wake: (() => void) | null = null
+    const onMessage = (_event: unknown, method: string, params: { backendNodeId?: number; mode?: string }) => {
+      if (method !== 'Page.fileChooserOpened' || chooser || typeof params.backendNodeId !== 'number') return
+      chooser = { backendNodeId: params.backendNodeId, multiple: params.mode === 'selectMultiple' }
+      wake?.()
+    }
+    dbg.on('message', onMessage)
+    try {
+      await dbg.sendCommand('Page.enable')
+      await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true })
+      await action()
+      if (!chooser && wait > 0) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, wait)
+          wake = () => {
+            clearTimeout(timer)
+            resolve()
+          }
+        })
+      }
+      return chooser
+    } finally {
+      dbg.off('message', onMessage)
+      if (dbg.isAttached()) await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => {})
+    }
   }
 
   async type(ref: number, text: string, options: { clear: boolean; submit: boolean }, signal: AbortSignal): Promise<string> {
@@ -438,28 +524,54 @@ export class AgentBrowser implements BrowserController {
     contents.sendInputEvent({ type: 'keyUp', keyCode })
   }
 
+  /**
+   * Dosya girişine doğrudan dosya verir. Öğe bir düğmeyse (ör. "Yükle") tıklar, açılan dosya seçme penceresini
+   * yakalar ve dosyaları ona verir; pencere açılmazsa tıklamadan sonra sayfadaki tek dosya girişini kullanır.
+   */
   async upload(ref: number, files: readonly string[], signal: AbortSignal): Promise<string> {
     await this.reveal()
     const contents = this.contents()
-    const isFile = (await contents.executeJavaScript(
-      `(() => { const el = (window.__agentRefs || [])[${ref - 1}]; return !!el && el.isConnected && el.tagName === 'INPUT' && el.type === 'file' })()`
-    )) as boolean
-    if (!isFile) throw new ToolError(`Element ${ref} is not a file input (input[file]). Call browser_snapshot and pick an input[file] element.`)
-    // Yerel dosya seçme penceresi sürülemez: dosyalar DevTools protokolüyle doğrudan öğeye verilir
-    const debuggerApi = contents.debugger
-    const attachedHere = !debuggerApi.isAttached()
-    if (attachedHere) debuggerApi.attach('1.3')
-    try {
-      const { result } = (await debuggerApi.sendCommand('Runtime.evaluate', {
-        expression: `window.__agentRefs[${ref - 1}]`
-      })) as { result: { objectId?: string } }
-      if (!result.objectId) throw new ToolError(`Element ${ref} is no longer on the page. Call browser_snapshot and use the new numbers.`)
-      await debuggerApi.sendCommand('DOM.setFileInputFiles', { files: [...files], objectId: result.objectId })
-    } finally {
-      if (attachedHere && debuggerApi.isAttached()) debuggerApi.detach()
-    }
+    const kind = (await contents.executeJavaScript(
+      `(() => { const el = (window.__agentRefs || [])[${ref - 1}]; if (!el || !el.isConnected) return null; return el.tagName === 'INPUT' && el.type === 'file' ? 'file' : 'other' })()`
+    )) as 'file' | 'other' | null
+    if (!kind) throw new ToolError(`Element ${ref} is no longer on the page. Call browser_snapshot and use the new numbers.`)
+    const paths = [...files]
+    let via = ''
+    await this.withDebugger(contents, async (dbg) => {
+      if (kind === 'file') {
+        await this.setInputFiles(dbg, `window.__agentRefs[${ref - 1}]`, paths, ref)
+        return
+      }
+      const info = await this.locate(ref)
+      const chooser = await this.interceptChooser(dbg, async () => this.mouseClick(contents, info), CHOOSER_TIMEOUT_MS)
+      if (chooser) {
+        if (!chooser.multiple && paths.length > 1) {
+          throw new ToolError('This upload accepts one file at a time. Call browser_upload once per file.')
+        }
+        await dbg.sendCommand('DOM.setFileInputFiles', { files: paths, backendNodeId: chooser.backendNodeId })
+        via = ' through the file chooser the click opened'
+        return
+      }
+      // Pencere açılmadı: tıklama sayfaya bir yükleme penceresi ve dosya girişi eklemiş olabilir
+      const count = (await contents.executeJavaScript(`document.querySelectorAll('input[type=file]:not([disabled])').length`)) as number
+      if (count !== 1) {
+        throw new ToolError(
+          `Clicking element ${ref} did not open a file chooser${count > 1 ? ' and the page has several file inputs' : ''}. ` +
+            'Call browser_snapshot and pass an input[file] element or the button that opens the file chooser.'
+        )
+      }
+      await this.setInputFiles(dbg, `document.querySelector('input[type=file]:not([disabled])')`, paths, ref)
+      via = ' to the file input on the page'
+    })
     await this.settle(contents, signal)
-    return this.snapshot()
+    const page = await this.snapshot()
+    return `Attached ${paths.length} file(s)${via}. If the page shows its own upload/confirm button, click it next; then check the file list.\n\n${page}`
+  }
+
+  private async setInputFiles(dbg: Debugger, expression: string, files: string[], ref: number): Promise<void> {
+    const { result } = (await dbg.sendCommand('Runtime.evaluate', { expression })) as { result: { objectId?: string } }
+    if (!result.objectId) throw new ToolError(`Element ${ref} is no longer on the page. Call browser_snapshot and use the new numbers.`)
+    await dbg.sendCommand('DOM.setFileInputFiles', { files, objectId: result.objectId })
   }
 
   async press(key: string, signal: AbortSignal): Promise<string> {
